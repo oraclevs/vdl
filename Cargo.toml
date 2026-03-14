@@ -2,6 +2,22 @@
 name = "vdl"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.75"
+description = "A fast, interactive terminal video downloader for YouTube, TikTok, Instagram, Twitter and Spotify"
+repository = "https://github.com/oraclevs/vdl"
+homepage = "https://github.com/oraclevs/vdl"
+documentation = "https://docs.rs/vdl"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+keywords = ["video", "downloader", "youtube", "tiktok", "cli"]
+categories = ["command-line-utilities", "multimedia::video"]
+exclude = [
+  ".github/**",
+  "*.log",
+  "output/**",
+  "libs/**",
+
+]
 
 [[bin]]
 name = "vdl"

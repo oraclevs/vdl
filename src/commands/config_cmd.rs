@@ -6,6 +6,14 @@ use crate::{config, tui};
 
 use super::display_path;
 
+/// Runs the config display command.
+///
+/// This handler resolves the expected config path, prints it for the user, and renders the raw
+/// YAML contents with colour when the file exists.
+///
+/// # Errors
+///
+/// Returns an error if the config path cannot be resolved or the file cannot be read.
 pub async fn run() -> Result<()> {
     let path = config::config_path().context("Failed to resolve vdl config path")?;
     let display_path = display_path(&path);

@@ -8,53 +8,122 @@ const CONFIG_DIR_RELATIVE: &str = ".config/vdl";
 const CONFIG_FILE_NAME: &str = "config.yaml";
 const EXAMPLE_CONFIG: &str = include_str!("../config.example.yaml");
 
+/// Represents the required user configuration loaded from `~/.config/vdl/config.yaml`.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    /// Stores the default directory used for completed downloads.
     pub download_path: String,
+    /// Selects the default output container when `--format` is omitted.
     pub default_format: String,
+    /// Selects the fallback video quality when `--quality` is omitted.
     pub default_video_quality: String,
+    /// Overrides the default quality per supported platform.
     pub platform_quality: PlatformQuality,
+    /// Points at the sandbox directory where `yt-dlp` and `ffmpeg` binaries are stored.
     pub bins_dir: String,
+    /// Controls whether metadata preview confirmation is shown before downloads start.
     pub confirm_before_download: bool,
+    /// Limits the number of interactive YouTube search results displayed to the user.
     pub search_results_count: usize,
 }
 
+/// Stores per-platform quality preferences used when a command omits `--quality`.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct PlatformQuality {
+    /// Sets the default quality override for YouTube downloads.
     pub youtube: String,
+    /// Sets the default quality override for TikTok downloads.
     pub tiktok: String,
+    /// Sets the default quality override for Instagram downloads.
     pub instagram: String,
+    /// Sets the default quality override for Twitter/X downloads.
     pub twitter: String,
+    /// Sets the default quality override for Spotify downloads.
     pub spotify: String,
 }
 
 impl Config {
+    /// Loads the application configuration from the standard user config path.
+    ///
+    /// # Returns
+    ///
+    /// Returns the deserialised [`Config`] value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the config path cannot be resolved, the file cannot be read,
+    /// or the YAML contents are invalid.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// let cfg = Config::load()?;
+    /// println!("{}", cfg.download_path_expanded().display());
+    /// ```
     pub fn load() -> Result<Config> {
         let path = config_path().context("Failed to resolve vdl config path")?;
         load_from_path(&path).context("Failed to load vdl config")
     }
 
+    /// Ensures the user config file exists, creating it from the bundled example on first run.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` when a new config file was created and `false` when one already existed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the config path cannot be resolved, the parent directory cannot be
+    /// created, or the example config cannot be written.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// if Config::ensure_exists()? {
+    ///     println!("created config");
+    /// }
+    /// ```
     pub fn ensure_exists() -> Result<bool> {
         let path = config_path().context("Failed to resolve vdl config path")?;
         ensure_exists_at(&path).context("Failed to ensure vdl config exists")
     }
 
+    /// Expands a leading `~` in [`Config::download_path`] to the current user's home directory.
     pub fn download_path_expanded(&self) -> PathBuf {
         expand_tilde(&self.download_path)
     }
 
+    /// Expands a leading `~` in [`Config::bins_dir`] to the current user's home directory.
     pub fn bins_dir_expanded(&self) -> PathBuf {
         expand_tilde(&self.bins_dir)
     }
 }
 
+/// Resolves the directory that contains `vdl` configuration files.
+///
+/// # Returns
+///
+/// Returns the fully qualified config directory path.
+///
+/// # Errors
+///
+/// Returns an error if the current user's home directory cannot be determined.
 pub fn config_dir() -> Result<PathBuf> {
     let home = require_home_dir().context("Failed to resolve vdl config directory")?;
     Ok(config_dir_from_home(&home))
 }
 
+/// Resolves the full path to `config.yaml` in the standard config directory.
+///
+/// # Returns
+///
+/// Returns the fully qualified config file path.
+///
+/// # Errors
+///
+/// Returns an error if the config directory cannot be resolved.
 pub fn config_path() -> Result<PathBuf> {
     Ok(config_dir()?.join(CONFIG_FILE_NAME))
 }

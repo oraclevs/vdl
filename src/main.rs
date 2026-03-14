@@ -1,3 +1,16 @@
+//! # vdl — Video Downloader CLI
+//!
+//! A terminal video downloader for YouTube, TikTok, Instagram,
+//! Twitter/X, and Spotify. Built on top of the
+//! [`yt-dlp`](https://crates.io/crates/yt-dlp) Rust crate.
+//!
+//! ## Quick start
+//!
+//! ```bash
+//! cargo install vdl
+//! vdl yt --search "rust programming"
+//! ```
+
 mod cli;
 mod commands;
 mod config;

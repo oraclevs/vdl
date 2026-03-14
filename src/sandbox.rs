@@ -1,3 +1,9 @@
+//! Manages the private `yt-dlp` and `ffmpeg` binaries used by `vdl`.
+//!
+//! Sandboxing in this project means the helper binaries live under the configured `bins_dir`
+//! instead of the system `PATH`, so `vdl` can update and invoke them without modifying the
+//! user's global toolchain.
+
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
@@ -6,22 +12,75 @@ use yt_dlp::client::deps::{Libraries, LibraryInstaller};
 
 use crate::{config::Config, downloader, tui};
 
+/// Returns the expanded sandbox directory that stores `yt-dlp` and `ffmpeg`.
+///
+/// # Arguments
+///
+/// * `cfg` - Loaded application configuration.
+///
+/// # Returns
+///
+/// Returns the fully expanded sandbox directory path.
 pub fn bins_dir(cfg: &Config) -> PathBuf {
     cfg.bins_dir_expanded()
 }
 
+/// Resolves the platform-specific path to the sandboxed `yt-dlp` executable.
+///
+/// # Arguments
+///
+/// * `cfg` - Loaded application configuration.
+///
+/// # Returns
+///
+/// Returns the absolute path to the managed `yt-dlp` binary.
 pub fn ytdlp_path(cfg: &Config) -> PathBuf {
     bins_dir(cfg).join(executable_name("yt-dlp"))
 }
 
+/// Resolves the platform-specific path to the sandboxed `ffmpeg` executable.
+///
+/// # Arguments
+///
+/// * `cfg` - Loaded application configuration.
+///
+/// # Returns
+///
+/// Returns the absolute path to the managed `ffmpeg` binary.
 pub fn ffmpeg_path(cfg: &Config) -> PathBuf {
     bins_dir(cfg).join(executable_name("ffmpeg"))
 }
 
+/// Builds the `yt-dlp` dependency descriptor used everywhere in the application.
+///
+/// # Arguments
+///
+/// * `cfg` - Loaded application configuration.
+///
+/// # Returns
+///
+/// Returns a [`yt_dlp::client::deps::Libraries`] value pointing at the sandboxed binaries.
 pub fn libraries(cfg: &Config) -> Libraries {
     Libraries::new(ytdlp_path(cfg), ffmpeg_path(cfg))
 }
 
+/// Ensures the sandbox directory exists and downloads missing helper binaries.
+///
+/// # Arguments
+///
+/// * `cfg` - Loaded application configuration.
+///
+/// # Errors
+///
+/// Returns an error if the sandbox directory cannot be created or if either helper binary
+/// cannot be downloaded.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// let cfg = Config::load()?;
+/// ensure_installed(&cfg).await?;
+/// ```
 pub async fn ensure_installed(cfg: &Config) -> Result<()> {
     let dir = bins_dir(cfg);
     fs::create_dir_all(&dir)
@@ -45,6 +104,22 @@ pub async fn ensure_installed(cfg: &Config) -> Result<()> {
     Ok(())
 }
 
+/// Updates the sandboxed `yt-dlp` binary and ensures `ffmpeg` is present afterwards.
+///
+/// # Arguments
+///
+/// * `cfg` - Loaded application configuration.
+///
+/// # Errors
+///
+/// Returns an error if the sandbox cannot be prepared or if the update/download steps fail.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// let cfg = Config::load()?;
+/// update_binaries(&cfg).await?;
+/// ```
 pub async fn update_binaries(cfg: &Config) -> Result<()> {
     let dir = bins_dir(cfg);
     fs::create_dir_all(&dir)

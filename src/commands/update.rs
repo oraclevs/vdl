@@ -7,6 +7,14 @@ use crate::{sandbox, tui};
 
 use super::{display_path, load_config_or_create};
 
+/// Runs the dependency update command for sandboxed `yt-dlp` and `ffmpeg`.
+///
+/// This handler loads configuration, updates the managed helper binaries, and prints the
+/// resulting version and path summary.
+///
+/// # Errors
+///
+/// Returns an error if configuration loading, binary updates, or version probing fails.
 pub async fn run() -> Result<()> {
     let Some(cfg) = load_config_or_create()? else {
         return Ok(());

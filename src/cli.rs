@@ -2,59 +2,89 @@ use std::path::PathBuf;
 
 use clap::{builder::PossibleValuesParser, Args, Parser, Subcommand};
 
+/// Parses the top-level `vdl` command line and selects a subcommand to run.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// let cli = Cli::parse_from(["vdl", "yt", "--url", "https://example.com/watch?v=123"]);
+/// ```
 #[derive(Debug, Parser)]
 #[command(name = "vdl", about = "Video Downloader CLI")]
 pub struct Cli {
+    /// Selects which platform command or utility action should run.
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
 
+/// Lists all supported platform and utility subcommands.
 #[derive(Debug, Subcommand)]
 pub enum Commands {
+    /// Downloads media from YouTube.
     #[command(visible_alias = "youtube", about = "Download from YouTube")]
     Yt(CommonArgs),
+    /// Downloads media from TikTok.
     #[command(visible_alias = "tiktok", about = "Download from TikTok")]
     Tk(CommonArgs),
+    /// Downloads media from Instagram.
     #[command(visible_alias = "instagram", about = "Download from Instagram")]
     Ig(CommonArgs),
+    /// Downloads media from Twitter/X.
     #[command(visible_alias = "twitter", about = "Download from Twitter/X")]
     Tw(CommonArgs),
+    /// Downloads audio from Spotify.
     #[command(visible_alias = "spotify", about = "Download from Spotify (audio)")]
     Sp(SpotifyArgs),
+    /// Updates sandboxed helper binaries.
     #[command(about = "Update sandboxed yt-dlp and ffmpeg binaries")]
     Update,
+    /// Prints the current config path and YAML contents.
     #[command(about = "Show current config file path and contents")]
     Config,
 }
 
+/// Captures the shared download flags used by YouTube, TikTok, Instagram, and Twitter/X.
 #[derive(Debug, Clone, Args)]
 pub struct CommonArgs {
+    /// Supplies a direct media URL to download.
     #[arg(short = 'u', long, value_name = "URL", conflicts_with = "search")]
     pub url: Option<String>,
+    /// Selects the preferred output quality when a platform supports it.
     #[arg(short = 'q', long, value_name = "Q", value_parser = quality_parser())]
     pub quality: Option<String>,
+    /// Downloads only the audio stream.
     #[arg(short = 'a', long, conflicts_with = "video_only")]
     pub audio_only: bool,
+    /// Downloads only the video stream without audio.
     #[arg(short = 'v', long, conflicts_with = "audio_only")]
     pub video_only: bool,
+    /// Overrides the output container format for this run.
     #[arg(short = 'f', long, value_name = "FMT", value_parser = common_format_parser())]
     pub format: Option<String>,
+    /// Overrides the destination directory for this run only.
     #[arg(short = 'o', long, value_name = "PATH")]
     pub output: Option<PathBuf>,
+    /// Searches by query instead of using a direct URL.
     #[arg(short = 's', long, value_name = "QUERY", conflicts_with = "url")]
     pub search: Option<String>,
+    /// Skips the confirmation prompt after metadata preview.
     #[arg(short = 'y', long)]
     pub yes: bool,
 }
 
+/// Captures the Spotify-specific flags for audio downloads.
 #[derive(Debug, Clone, Args)]
 pub struct SpotifyArgs {
+    /// Supplies a direct Spotify URL to download.
     #[arg(short = 'u', long, value_name = "URL")]
     pub url: Option<String>,
+    /// Overrides the destination directory for this run only.
     #[arg(short = 'o', long, value_name = "PATH")]
     pub output: Option<PathBuf>,
+    /// Selects the audio container written to disk.
     #[arg(short = 'f', long, value_name = "FMT", value_parser = spotify_format_parser())]
     pub format: Option<String>,
+    /// Skips the confirmation prompt after metadata preview.
     #[arg(short = 'y', long)]
     pub yes: bool,
 }

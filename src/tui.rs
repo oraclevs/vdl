@@ -12,14 +12,34 @@ const HEADER_WIDTH: usize = 60;
 const LABEL_WIDTH: usize = 10;
 const SPINNER_TICKS: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+/// Represents a selectable search result rendered in the interactive picker.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchResult {
+    /// Stores the display title shown in the picker.
     pub title: String,
+    /// Stores the channel, uploader, or account label shown in the picker.
     pub uploader: String,
+    /// Stores the preformatted duration string shown in the picker.
     pub duration: String,
+    /// Stores the platform-specific identifier used to build the final URL.
     pub id: String,
 }
 
+/// Starts an animated spinner for long-running terminal operations.
+///
+/// # Arguments
+///
+/// * `msg` - Message displayed next to the spinner.
+///
+/// # Returns
+///
+/// Returns a running [`indicatif::ProgressBar`] configured as a spinner.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// let pb = spinner("Fetching video info...");
+/// ```
 pub fn spinner(msg: &str) -> ProgressBar {
     let pb = ProgressBar::new_spinner();
     let style = ProgressStyle::with_template("{spinner:.cyan} {msg}")
@@ -32,14 +52,54 @@ pub fn spinner(msg: &str) -> ProgressBar {
     pb
 }
 
+/// Finishes a spinner with a green success message.
+///
+/// # Arguments
+///
+/// * `pb` - Spinner to finish.
+/// * `msg` - Success message to display.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// spinner_ok(&pb, "Fetched video info");
+/// ```
 pub fn spinner_ok(pb: &ProgressBar, msg: &str) {
     pb.finish_with_message(format!("{} {msg}", "✓".green()));
 }
 
+/// Finishes a spinner with a red error message.
+///
+/// # Arguments
+///
+/// * `pb` - Spinner to finish.
+/// * `msg` - Error message to display.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// spinner_err(&pb, "Failed to download");
+/// ```
 pub fn spinner_err(pb: &ProgressBar, msg: &str) {
     pb.finish_with_message(format!("{} {msg}", "✗".red()));
 }
 
+/// Creates a byte-oriented download progress bar.
+///
+/// # Arguments
+///
+/// * `total_bytes` - Expected size of the download in bytes.
+/// * `filename` - Label shown next to the bar.
+///
+/// # Returns
+///
+/// Returns a started [`indicatif::ProgressBar`] configured for byte progress.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// let pb = download_bar(512 * 1024 * 1024, "movie.mp4");
+/// ```
 pub fn download_bar(total_bytes: u64, filename: &str) -> ProgressBar {
     let pb = ProgressBar::new(total_bytes);
     let style = ProgressStyle::with_template(
@@ -56,13 +116,41 @@ pub fn download_bar(total_bytes: u64, filename: &str) -> ProgressBar {
     pb
 }
 
+/// Updates a byte-oriented download progress bar.
+///
+/// # Arguments
+///
+/// * `pb` - Progress bar created by [`download_bar`].
+/// * `downloaded` - Number of bytes already written.
+/// * `total` - Total expected number of bytes.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// update_download_bar(&pb, 128, 1024);
+/// ```
 pub fn update_download_bar(pb: &ProgressBar, downloaded: u64, total: u64) {
     pb.set_length(total);
     pb.set_position(downloaded);
 }
 
+/// Creates a percentage-based progress bar for APIs that report fractional progress.
+///
+/// # Arguments
+///
+/// * `filename` - Label shown next to the bar.
+///
+/// # Returns
+///
+/// Returns a started [`indicatif::ProgressBar`] configured for percentage progress.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// let pb = progress_bar("episode.mp4");
+/// ```
 pub fn progress_bar(filename: &str) -> ProgressBar {
-    let pb = ProgressBar::new(1000);
+    let pb = download_bar(1000, filename);
     let style =
         ProgressStyle::with_template("{spinner:.cyan} {msg} [{bar:40.green/white}] {percent:>3}%")
             .map(|style| style.tick_strings(&SPINNER_TICKS).progress_chars("█▓░"))
@@ -76,19 +164,64 @@ pub fn progress_bar(filename: &str) -> ProgressBar {
     pb
 }
 
+/// Updates a percentage-based progress bar from a fractional value.
+///
+/// # Arguments
+///
+/// * `pb` - Progress bar created by [`progress_bar`].
+/// * `fraction` - Progress in the inclusive range `0.0..=1.0`.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// update_progress_bar(&pb, 0.5);
+/// ```
 pub fn update_progress_bar(pb: &ProgressBar, fraction: f64) {
     let clamped = fraction.clamp(0.0, 1.0);
-    pb.set_position((clamped * 1000.0).round() as u64);
+    update_download_bar(pb, (clamped * 1000.0).round() as u64, 1000);
 }
 
+/// Clears an active progress indicator from the terminal.
+///
+/// # Arguments
+///
+/// * `pb` - Progress bar or spinner to clear.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// clear_progress(&pb);
+/// ```
 pub fn clear_progress(pb: &ProgressBar) {
     pb.finish_and_clear();
 }
 
+/// Prints the standard metadata preview block for a fetched video.
+///
+/// # Arguments
+///
+/// * `video` - Video metadata returned by the downloader.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// print_metadata(&video);
+/// ```
 pub fn print_metadata(video: &Video) {
     print_metadata_block(&metadata_entries(video));
 }
 
+/// Prints the Spotify-specific metadata preview block.
+///
+/// # Arguments
+///
+/// * `video` - Video metadata returned by the downloader.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// print_spotify_metadata(&video);
+/// ```
 pub fn print_spotify_metadata(video: &Video) {
     let entries = vec![
         ("Title", video.title.clone()),
@@ -112,51 +245,180 @@ pub fn print_spotify_metadata(video: &Video) {
     print_metadata_block(&entries);
 }
 
+/// Prompts the user to confirm whether a download should continue.
+///
+/// # Arguments
+///
+/// * `video_title` - Title inserted into the confirmation question.
+///
+/// # Returns
+///
+/// Returns `true` when the user confirms the download.
+///
+/// # Errors
+///
+/// Returns an error if terminal input cannot be read.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// if confirm_download("Example Title")? {
+///     // start download
+/// }
+/// ```
 pub fn confirm_download(video_title: &str) -> Result<bool> {
     confirm_download_on(video_title, &Term::stderr())
 }
 
+/// Opens an interactive selector for a list of search results.
+///
+/// # Arguments
+///
+/// * `results` - Search results to display, followed by an implicit `Cancel` option.
+///
+/// # Returns
+///
+/// Returns `Some(index)` for a selected video or `None` when the user cancels.
+///
+/// # Errors
+///
+/// Returns an error if terminal input cannot be read.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// let selection = select_search_result(&results)?;
+/// ```
 pub fn select_search_result(results: &[SearchResult]) -> Result<Option<usize>> {
     select_search_result_on(results, &Term::stderr())
 }
 
+/// Prints a cyan section header for the current platform action.
+///
+/// # Arguments
+///
+/// * `platform` - Platform name such as `YouTube`.
+/// * `action` - Active operation such as `Searching`.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// print_header("YouTube", "Downloading");
+/// ```
 pub fn print_header(platform: &str, action: &str) {
     let mut stdout = io::stdout().lock();
     let _ = writeln!(stdout, "{}", header_line(platform, action).cyan());
 }
 
+/// Prints an informational line to standard output.
+///
+/// # Arguments
+///
+/// * `msg` - Message text to print.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// print_info("No results found.");
+/// ```
 pub fn print_info(msg: &str) {
     let mut stdout = io::stdout().lock();
     let _ = writeln!(stdout, "{msg}");
 }
 
+/// Prints a success line prefixed with a green checkmark.
+///
+/// # Arguments
+///
+/// * `msg` - Message text to print.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// print_success("Saved to: /tmp/video.mp4");
+/// ```
 pub fn print_success(msg: &str) {
     let mut stdout = io::stdout().lock();
     let _ = writeln!(stdout, "{} {}", "✓".green(), msg.green());
 }
 
+/// Prints a warning line in yellow.
+///
+/// # Arguments
+///
+/// * `msg` - Message text to print.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// print_warning("No config file found.");
+/// ```
 pub fn print_warning(msg: &str) {
     let mut stdout = io::stdout().lock();
     let _ = writeln!(stdout, "{}", msg.yellow());
 }
 
+/// Prints the first-run bootstrap message after creating a new config file.
+///
+/// # Arguments
+///
+/// * `config_path` - Human-friendly path shown to the user.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// print_first_run("~/.config/vdl/config.yaml");
+/// ```
 pub fn print_first_run(config_path: &str) {
     print_warning("  Welcome to vdl! No config found.");
     print_info(&format!("  Config created at: {config_path}"));
     print_info("  Please edit it to set your download path, then run vdl again.");
 }
 
+/// Prints the resolved config file path in a highlighted style.
+///
+/// # Arguments
+///
+/// * `path` - Config path to display.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// print_config_path("~/.config/vdl/config.yaml");
+/// ```
 pub fn print_config_path(path: &str) {
     let mut stdout = io::stdout().lock();
     let _ = writeln!(stdout, "Config path: {}", path.cyan());
 }
 
+/// Prints the message shown when the config file does not yet exist.
+///
+/// # Arguments
+///
+/// * `path` - Expected config path.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// print_missing_config("~/.config/vdl/config.yaml");
+/// ```
 pub fn print_missing_config(path: &str) {
     print_warning("No config file found.");
     let mut stdout = io::stdout().lock();
     let _ = writeln!(stdout, "Expected path: {}", path.cyan());
 }
 
+/// Prints YAML contents with simple syntax-aware colouring.
+///
+/// # Arguments
+///
+/// * `contents` - Raw YAML text to render.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// print_yaml("download_path: ~/Downloads/vdl");
+/// ```
 pub fn print_yaml(contents: &str) {
     let mut stdout = io::stdout().lock();
 
@@ -165,6 +427,25 @@ pub fn print_yaml(contents: &str) {
     }
 }
 
+/// Prompts the user for a single line of text input.
+///
+/// # Arguments
+///
+/// * `prompt` - Prompt text shown before reading user input.
+///
+/// # Returns
+///
+/// Returns the text entered by the user.
+///
+/// # Errors
+///
+/// Returns an error if terminal input cannot be read.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// let query = prompt_input("Enter search query")?;
+/// ```
 pub fn prompt_input(prompt: &str) -> Result<String> {
     Input::<String>::new()
         .with_prompt(prompt)

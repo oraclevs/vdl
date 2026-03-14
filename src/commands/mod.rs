@@ -1,9 +1,16 @@
+/// Shows the current config file path and colourised YAML contents.
 pub mod config_cmd;
+/// Handles Instagram downloads through the shared platform flow.
 pub mod ig;
+/// Handles Spotify audio downloads.
 pub mod sp;
+/// Handles TikTok downloads through the shared platform flow.
 pub mod tk;
+/// Handles Twitter/X downloads through the shared platform flow.
 pub mod tw;
+/// Updates sandboxed helper binaries.
 pub mod update;
+/// Handles YouTube downloads and interactive search.
 pub mod yt;
 
 use std::fs;
@@ -63,7 +70,7 @@ impl Platform {
         }
     }
 
-    fn quality_override<'a>(self, cfg: &'a Config) -> Option<&'a str> {
+    fn quality_override(self, cfg: &Config) -> Option<&str> {
         match self {
             Platform::YouTube => Some(cfg.platform_quality.youtube.as_str()),
             Platform::TikTok => Some(cfg.platform_quality.tiktok.as_str()),
@@ -431,6 +438,7 @@ async fn execute_common_download(
     request: &CommonRequest,
 ) -> Result<PathBuf> {
     let progress = tui::progress_bar(filename);
+    let temp_dir = cfg.download_path_expanded();
 
     // yt-dlp 2.6.0 exposes public progress callbacks for combined and stream downloads
     // through DownloadBuilder::with_progress(f64), not the byte-based signatures used in the spec.
@@ -454,10 +462,22 @@ async fn execute_common_download(
     match result {
         Ok(path) => {
             tui::clear_progress(&progress);
+            if let Err(err) = cleanup_managed_temp_files(&temp_dir).await {
+                tui::print_warning(&format!(
+                    "Download completed, but failed to clean temporary files in {}: {err}",
+                    temp_dir.display()
+                ));
+            }
             Ok(path)
         }
         Err(err) => {
             tui::clear_progress(&progress);
+            if let Err(cleanup_err) = cleanup_managed_temp_files(&temp_dir).await {
+                tui::print_warning(&format!(
+                    "Failed to clean temporary files in {} after download error: {cleanup_err}",
+                    temp_dir.display()
+                ));
+            }
             Err(err)
         }
     }
@@ -634,6 +654,48 @@ fn resolve_output_dir(override_dir: Option<PathBuf>, fallback: PathBuf) -> Resul
     }
 }
 
+async fn cleanup_managed_temp_files(dir: &Path) -> Result<usize> {
+    let mut removed = 0usize;
+    let mut entries = match tokio::fs::read_dir(dir).await {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(err) => {
+            return Err(err)
+                .with_context(|| format!("Failed to read temp directory {}", dir.display()))
+        }
+    };
+
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .with_context(|| format!("Failed to read temp directory entry in {}", dir.display()))?
+    {
+        let file_type = entry
+            .file_type()
+            .await
+            .with_context(|| format!("Failed to inspect {}", entry.path().display()))?;
+
+        if !file_type.is_file() {
+            continue;
+        }
+
+        let file_name = entry.file_name();
+        let file_name = file_name.to_string_lossy();
+        if !is_managed_temp_artifact(&file_name) {
+            continue;
+        }
+
+        tokio::fs::remove_file(entry.path())
+            .await
+            .with_context(|| {
+                format!("Failed to remove temporary file {}", entry.path().display())
+            })?;
+        removed += 1;
+    }
+
+    Ok(removed)
+}
+
 fn normalize_optional_text(value: Option<String>) -> Option<String> {
     value.and_then(|value| {
         let trimmed = value.trim();
@@ -717,8 +779,6 @@ fn sanitise_filename(title: &str) -> String {
     for ch in title.chars() {
         let normalized = if ch.is_alphanumeric() || ch == '-' {
             ch
-        } else if ch == '_' || ch.is_whitespace() {
-            '_'
         } else {
             '_'
         };
@@ -780,6 +840,18 @@ fn format_playlist_duration(seconds: Option<f64>) -> String {
     } else {
         format!("{minutes}:{seconds:02}")
     }
+}
+
+fn is_managed_temp_artifact(file_name: &str) -> bool {
+    let base_name = file_name
+        .strip_suffix(".parts")
+        .or_else(|| file_name.strip_suffix(".part"))
+        .unwrap_or(file_name);
+
+    base_name.starts_with("temp_audio_")
+        || base_name.starts_with("temp_video_")
+        || base_name.starts_with("clip_audio_")
+        || base_name.starts_with("clip_video_")
 }
 
 pub(crate) fn display_path(path: &Path) -> String {
@@ -869,6 +941,56 @@ mod tests {
         assert_eq!(value["subtitles"], json!({}));
         assert_eq!(value["tags"], json!([]));
         assert_eq!(value["categories"], json!([]));
+    }
+
+    #[test]
+    fn detects_managed_temp_artifacts() {
+        assert!(is_managed_temp_artifact("temp_audio_abc123.m4a"));
+        assert!(is_managed_temp_artifact("temp_video_abc123.mp4.parts"));
+        assert!(is_managed_temp_artifact("clip_video_abc123.webm"));
+        assert!(!is_managed_temp_artifact("How_to_Rust.mp4"));
+        assert!(!is_managed_temp_artifact("notes.parts"));
+    }
+
+    #[tokio::test]
+    async fn cleanup_managed_temp_files_removes_only_managed_artifacts() {
+        let dir = std::env::temp_dir().join(format!(
+            "vdl-cleanup-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time should be after epoch")
+                .as_nanos()
+        ));
+
+        tokio::fs::create_dir_all(&dir)
+            .await
+            .expect("temp cleanup test directory should be created");
+        tokio::fs::write(dir.join("temp_audio_one.m4a"), b"x")
+            .await
+            .expect("managed temp file should be created");
+        tokio::fs::write(dir.join("temp_video_one.mp4.parts"), b"x")
+            .await
+            .expect("managed parts file should be created");
+        tokio::fs::write(dir.join("final_video.mp4"), b"x")
+            .await
+            .expect("final video file should be created");
+
+        let removed = cleanup_managed_temp_files(&dir)
+            .await
+            .expect("cleanup should succeed");
+
+        assert_eq!(removed, 2);
+        assert!(!dir.join("temp_audio_one.m4a").exists());
+        assert!(!dir.join("temp_video_one.mp4.parts").exists());
+        assert!(dir.join("final_video.mp4").exists());
+
+        tokio::fs::remove_file(dir.join("final_video.mp4"))
+            .await
+            .expect("final test artifact should be removed");
+        tokio::fs::remove_dir(&dir)
+            .await
+            .expect("temp cleanup test directory should be removed");
     }
 
     #[test]
