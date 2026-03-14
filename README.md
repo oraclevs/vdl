@@ -48,6 +48,8 @@ downloads `yt-dlp` and `ffmpeg` automatically into
 On Termux, `vdl` auto-detects the environment, applies the certificate
 bundle path for HTTPS downloads, and falls back to plain progress lines
 instead of animated spinners.
+Install `ffmpeg` with `pkg install ffmpeg` before your first native
+Termux download so `vdl` can copy it into its sandbox.
 
 **Prerequisites:** Rust 1.75 or newer. Install from https://rustup.rs.
 
@@ -151,6 +153,10 @@ no_progress: false
 
 For Instagram, Spotify, and login-gated YouTube videos, set either
 `cookies_file` or `cookies_from_browser` before downloading.
+
+On native Termux installs, `vdl` downloads the Linux `aarch64` `yt-dlp`
+binary directly and reuses the `ffmpeg` binary from your Termux
+environment.
 
 ## License
 

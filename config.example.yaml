@@ -45,6 +45,8 @@ search_results_count: 8
 # vdl auto-detects Termux via the TERMUX_VERSION environment
 # variable, so you normally do not need to set this manually.
 # Set it manually only if auto-detection is not working.
+# Native Termux installs should also provide ffmpeg via:
+#   pkg install ffmpeg
 termux_mode: false
 
 # Set to true to disable all animated spinners and progress bars.

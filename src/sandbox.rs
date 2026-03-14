@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use tokio::fs;
 use yt_dlp::client::deps::{Libraries, LibraryInstaller};
 
@@ -20,6 +20,7 @@ use crate::{config::Config, downloader, tui};
 /// resolved home directory looks like a Termux-managed path.
 pub fn is_termux() -> bool {
     is_termux_with(
+        cfg!(target_os = "android"),
         std::env::var("TERMUX_VERSION").ok().as_deref(),
         dirs::home_dir(),
     )
@@ -131,6 +132,12 @@ pub async fn ensure_installed(cfg: &Config) -> Result<()> {
         .await
         .with_context(|| format!("Failed to create bins directory at {}", dir.display()))?;
 
+    if cfg.termux_mode {
+        ensure_installed_termux(cfg).await?;
+        ensure_binary_permissions(cfg)?;
+        return Ok(());
+    }
+
     let installer = LibraryInstaller::new(dir);
 
     if !ytdlp_path(cfg).exists() {
@@ -171,6 +178,22 @@ pub async fn update_binaries(cfg: &Config) -> Result<()> {
     fs::create_dir_all(&dir)
         .await
         .with_context(|| format!("Failed to create bins directory at {}", dir.display()))?;
+
+    if cfg.termux_mode {
+        let pb = tui::spinner("Updating vdl dependencies...", cfg.no_progress);
+        let result = update_binaries_termux(cfg).await;
+
+        match result {
+            Ok(()) => {
+                tui::spinner_ok(&pb, "yt-dlp updated successfully");
+                return Ok(());
+            }
+            Err(err) => {
+                tui::spinner_err(&pb, "Failed to update yt-dlp");
+                return Err(err).context("Failed to update yt-dlp");
+            }
+        }
+    }
 
     let installer = LibraryInstaller::new(dir);
 
@@ -248,7 +271,148 @@ async fn install_ffmpeg(installer: &LibraryInstaller, no_progress: bool) -> Resu
     }
 }
 
-fn is_termux_with(termux_version: Option<&str>, home_dir: Option<PathBuf>) -> bool {
+async fn ensure_installed_termux(cfg: &Config) -> Result<()> {
+    ensure_ytdlp_termux(cfg, false).await?;
+    ensure_ffmpeg_termux(cfg, false).await?;
+    Ok(())
+}
+
+async fn update_binaries_termux(cfg: &Config) -> Result<()> {
+    ensure_ytdlp_termux(cfg, true).await?;
+    ensure_ffmpeg_termux(cfg, true).await?;
+    ensure_binary_permissions(cfg)?;
+    Ok(())
+}
+
+async fn ensure_ytdlp_termux(cfg: &Config, force: bool) -> Result<()> {
+    let destination = ytdlp_path(cfg);
+    if destination.exists() && !force {
+        return Ok(());
+    }
+
+    if destination.exists() && force {
+        fs::remove_file(&destination)
+            .await
+            .with_context(|| format!("Failed to remove existing {}", destination.display()))?;
+    }
+
+    let pb = tui::spinner("Downloading sandboxed yt-dlp...", cfg.no_progress);
+    let result = download_termux_ytdlp(&destination).await;
+
+    match result {
+        Ok(()) => {
+            tui::spinner_ok(
+                &pb,
+                &format!("yt-dlp downloaded to {}", destination.display()),
+            );
+            Ok(())
+        }
+        Err(err) => {
+            tui::spinner_err(&pb, "Failed to download yt-dlp");
+            Err(err).context(format!(
+                "Failed to install yt-dlp into {}",
+                destination.display()
+            ))
+        }
+    }
+}
+
+async fn ensure_ffmpeg_termux(cfg: &Config, force: bool) -> Result<()> {
+    let destination = ffmpeg_path(cfg);
+    if destination.exists() && !force {
+        return Ok(());
+    }
+
+    let source = find_ffmpeg_on_path().with_context(|| {
+        "ffmpeg not found. Install it with:\n  pkg install ffmpeg\nThen run vdl again."
+    })?;
+
+    let pb = tui::spinner("Copying system ffmpeg into sandbox...", cfg.no_progress);
+    let result = copy_binary_into_sandbox(&source, &destination, force).await;
+
+    match result {
+        Ok(()) => {
+            tui::spinner_ok(&pb, &format!("ffmpeg copied to {}", destination.display()));
+            Ok(())
+        }
+        Err(err) => {
+            tui::spinner_err(&pb, "Failed to prepare ffmpeg");
+            Err(err).context(format!(
+                "Failed to install ffmpeg into {}",
+                destination.display()
+            ))
+        }
+    }
+}
+
+async fn copy_binary_into_sandbox(source: &Path, destination: &Path, force: bool) -> Result<()> {
+    if destination.exists() && force {
+        fs::remove_file(destination)
+            .await
+            .with_context(|| format!("Failed to remove existing {}", destination.display()))?;
+    }
+
+    fs::copy(source, destination).await.with_context(|| {
+        format!(
+            "Failed to copy {} into {}",
+            source.display(),
+            destination.display()
+        )
+    })?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "android")]
+async fn download_termux_ytdlp(destination: &Path) -> Result<()> {
+    let bytes = reqwest::get(termux_ytdlp_url())
+        .await
+        .context("Failed to reach GitHub releases for yt-dlp")?
+        .error_for_status()
+        .context("yt-dlp download returned a non-success status")?
+        .bytes()
+        .await
+        .context("Failed to read yt-dlp download body")?;
+
+    fs::write(destination, &bytes)
+        .await
+        .with_context(|| format!("Failed to write yt-dlp binary to {}", destination.display()))?;
+
+    Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
+async fn download_termux_ytdlp(_destination: &Path) -> Result<()> {
+    bail!("Termux yt-dlp download is only supported on Android targets")
+}
+
+#[cfg(any(target_os = "android", test))]
+fn termux_ytdlp_url() -> &'static str {
+    "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64"
+}
+
+fn find_ffmpeg_on_path() -> Result<PathBuf> {
+    let path = std::env::var_os("PATH").context("PATH was not set")?;
+
+    for directory in std::env::split_paths(&path) {
+        let candidate = directory.join(executable_name("ffmpeg"));
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+    }
+
+    bail!("ffmpeg was not found on PATH")
+}
+
+fn is_termux_with(
+    android_target: bool,
+    termux_version: Option<&str>,
+    home_dir: Option<PathBuf>,
+) -> bool {
+    if !android_target {
+        return false;
+    }
+
     if termux_version.is_some() {
         return true;
     }
@@ -328,12 +492,22 @@ mod tests {
 
     #[test]
     fn detects_termux_from_env_or_home_path() {
-        assert!(is_termux_with(Some("0.118.0"), None));
+        assert!(is_termux_with(true, Some("0.118.0"), None));
         assert!(is_termux_with(
+            true,
             None,
             Some(PathBuf::from("/data/data/com.termux/files/home"))
         ));
-        assert!(!is_termux_with(None, Some(PathBuf::from("/home/occ"))));
+        assert!(!is_termux_with(
+            true,
+            None,
+            Some(PathBuf::from("/home/occ"))
+        ));
+        assert!(!is_termux_with(
+            false,
+            Some("0.118.0"),
+            Some(PathBuf::from("/data/data/com.termux/files/home"))
+        ));
     }
 
     #[cfg(unix)]
@@ -362,6 +536,40 @@ mod tests {
         assert_eq!(mode, 0o755);
 
         std::fs::remove_dir_all(&dir).expect("test dir cleanup should succeed");
+    }
+
+    #[test]
+    fn finds_ffmpeg_on_custom_path() {
+        let dir = unique_test_dir("ffmpeg");
+        std::fs::create_dir_all(&dir).expect("test dir should be created");
+        let executable = dir.join(if cfg!(target_os = "windows") {
+            "ffmpeg.exe"
+        } else {
+            "ffmpeg"
+        });
+        File::create(&executable).expect("ffmpeg test binary should be created");
+
+        let previous_path = std::env::var_os("PATH");
+        std::env::set_var("PATH", dir.as_os_str());
+
+        let found = find_ffmpeg_on_path().expect("ffmpeg should be found");
+        assert_eq!(found, executable);
+
+        if let Some(previous_path) = previous_path {
+            std::env::set_var("PATH", previous_path);
+        } else {
+            std::env::remove_var("PATH");
+        }
+
+        std::fs::remove_dir_all(&dir).expect("test dir cleanup should succeed");
+    }
+
+    #[test]
+    fn termux_installer_uses_linux_aarch64_binary_url() {
+        assert_eq!(
+            termux_ytdlp_url(),
+            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64"
+        );
     }
 
     fn test_config() -> Config {
