@@ -5,4 +5,8 @@ mod downloader;
 mod sandbox;
 mod tui;
 
-fn main() {}
+use clap::Parser;
+
+fn main() {
+    let _ = cli::Cli::parse();
+}
