@@ -1,1 +1,31 @@
-# Scaffold placeholder. Configuration content is added in a later layer.
+# vdl configuration file
+# Location: $HOME/.config/vdl/config.yaml
+
+# Directory where downloaded files are saved
+download_path: ~/Downloads/vdl
+
+# Default output container format
+# Options: mp4 | mkv | webm | mp3 | m4a | opus
+default_format: mp4
+
+# Default video quality when --quality flag is omitted
+# Options: best | 1080 | 720 | 480 | 360 | worst
+default_video_quality: 1080
+
+# Platform-specific quality overrides
+platform_quality:
+  youtube:   1080
+  tiktok:    720
+  instagram: 720
+  twitter:   720
+  spotify:   best
+
+# Path where sandboxed binaries are stored
+# Do NOT change this unless you know what you are doing
+bins_dir: ~/.local/share/vdl/bins
+
+# Show video metadata preview and prompt before downloading
+confirm_before_download: true
+
+# Number of search results to show
+search_results_count: 8
