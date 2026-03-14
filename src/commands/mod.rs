@@ -191,7 +191,7 @@ pub(crate) async fn run_spotify(args: SpotifyArgs) -> Result<()> {
     Ok(())
 }
 
-fn load_config_or_create() -> Result<Option<Config>> {
+pub(crate) fn load_config_or_create() -> Result<Option<Config>> {
     if Config::ensure_exists()? {
         let path = config::config_path()?;
         tui::print_first_run(&display_path(&path));
@@ -611,7 +611,7 @@ fn format_playlist_duration(seconds: Option<f64>) -> String {
     format!("{hours}:{minutes:02}:{seconds:02}")
 }
 
-fn display_path(path: &Path) -> String {
+pub(crate) fn display_path(path: &Path) -> String {
     if let Some(home) = dirs::home_dir() {
         if let Ok(stripped) = path.strip_prefix(&home) {
             if stripped.as_os_str().is_empty() {

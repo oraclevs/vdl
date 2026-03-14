@@ -53,7 +53,7 @@ pub async fn update_binaries(cfg: &Config) -> Result<()> {
         install_ytdlp(&installer).await?;
     }
 
-    let pb = tui::spinner("Updating sandboxed yt-dlp...");
+    let pb = tui::spinner("Updating vdl dependencies...");
     let downloader = downloader::build(cfg)
         .await
         .context("Failed to initialise downloader for binary update")?;
