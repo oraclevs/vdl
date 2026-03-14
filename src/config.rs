@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::sandbox;
 
@@ -11,7 +11,7 @@ const CONFIG_FILE_NAME: &str = "config.yaml";
 const EXAMPLE_CONFIG: &str = include_str!("../config.example.yaml");
 
 /// Represents the required user configuration loaded from `~/.config/vdl/config.yaml`.
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     /// Stores the default directory used for completed downloads.
@@ -43,7 +43,7 @@ pub struct Config {
 }
 
 /// Stores per-platform quality preferences used when a command omits `--quality`.
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct PlatformQuality {
     /// Sets the default quality override for YouTube downloads.
