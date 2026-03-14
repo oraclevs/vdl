@@ -608,7 +608,11 @@ fn format_playlist_duration(seconds: Option<f64>) -> String {
     let minutes = (total_seconds % 3600) / 60;
     let seconds = total_seconds % 60;
 
-    format!("{hours}:{minutes:02}:{seconds:02}")
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes}:{seconds:02}")
+    }
 }
 
 pub(crate) fn display_path(path: &Path) -> String {
@@ -652,6 +656,14 @@ mod tests {
     fn format_size_uses_human_units() {
         assert_eq!(format_size(999), "999 B");
         assert_eq!(format_size(1_536), "1.5 KB");
+    }
+
+    #[test]
+    fn format_playlist_duration_matches_reference_style() {
+        assert_eq!(format_playlist_duration(Some(59.0)), "0:59");
+        assert_eq!(format_playlist_duration(Some(1_350.0)), "22:30");
+        assert_eq!(format_playlist_duration(Some(6_300.0)), "1:45:00");
+        assert_eq!(format_playlist_duration(None), "Unknown");
     }
 
     #[test]

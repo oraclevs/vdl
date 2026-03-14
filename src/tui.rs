@@ -318,11 +318,19 @@ fn format_duration(duration: Option<i64>) -> String {
         return "Unknown".to_string();
     }
 
+    format_clock_duration(total_seconds)
+}
+
+fn format_clock_duration(total_seconds: i64) -> String {
     let hours = total_seconds / 3600;
     let minutes = (total_seconds % 3600) / 60;
     let seconds = total_seconds % 60;
 
-    format!("{hours}:{minutes:02}:{seconds:02}")
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes}:{seconds:02}")
+    }
 }
 
 fn format_number(value: i64) -> String {
@@ -434,7 +442,7 @@ mod tests {
             SearchResult {
                 title: "Rust Async Explained".to_string(),
                 uploader: "No Boilerplate".to_string(),
-                duration: "0:22:30".to_string(),
+                duration: "22:30".to_string(),
                 id: "abc".to_string(),
             },
             SearchResult {
@@ -448,7 +456,7 @@ mod tests {
         assert_eq!(
             items,
             vec![
-                "[1] Rust Async Explained — No Boilerplate (0:22:30)".to_string(),
+                "[1] Rust Async Explained — No Boilerplate (22:30)".to_string(),
                 "[2] Tokio Tutorial — Jon Gjengset (1:45:00)".to_string(),
                 "Cancel".to_string(),
             ]
@@ -471,7 +479,8 @@ mod tests {
 
     #[test]
     fn duration_formats_with_hours() {
-        assert_eq!(format_duration(Some(59)), "0:00:59");
+        assert_eq!(format_duration(Some(59)), "0:59");
+        assert_eq!(format_duration(Some(635)), "10:35");
         assert_eq!(format_duration(Some(3_661)), "1:01:01");
         assert_eq!(format_duration(None), "Unknown");
     }
@@ -524,7 +533,7 @@ mod tests {
             &[SearchResult {
                 title: "Rust Async Explained".to_string(),
                 uploader: "No Boilerplate".to_string(),
-                duration: "0:22:30".to_string(),
+                duration: "22:30".to_string(),
                 id: "abc".to_string(),
             }],
             &Term::stderr(),

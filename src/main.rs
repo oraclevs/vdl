@@ -34,6 +34,12 @@ async fn run() -> Result<()> {
         Some(cli::Commands::Update) => commands::update::run().await,
         Some(cli::Commands::Config) => commands::config_cmd::run().await,
         None => {
+            if config::Config::ensure_exists()? {
+                let path = config::config_path().context("Failed to resolve vdl config path")?;
+                tui::print_first_run(&commands::display_path(&path));
+                return Ok(());
+            }
+
             let mut command = cli::Cli::command();
             command.print_help().context("Failed to render CLI help")?;
             std::io::stdout()
