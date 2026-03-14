@@ -10,10 +10,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
+use serde_json::{json, Map, Value};
+use yt_dlp::error::Error as YtDlpError;
 use yt_dlp::model::selector::{
     AudioCodecPreference, AudioQuality, VideoCodecPreference, VideoQuality,
 };
 use yt_dlp::model::types::playlist::PlaylistEntry;
+use yt_dlp::model::Video;
 use yt_dlp::Downloader;
 
 use crate::cli::{CommonArgs, SpotifyArgs};
@@ -109,7 +112,7 @@ pub(crate) async fn run_common_platform(platform: Platform, args: CommonArgs) ->
         }
     };
 
-    let video = fetch_video(&downloader, &url).await?;
+    let video = fetch_video(&downloader, &cfg, &url).await?;
     tui::print_metadata(&video);
 
     if cfg.confirm_before_download && !request.yes && !tui::confirm_download(&video.title)? {
@@ -124,7 +127,8 @@ pub(crate) async fn run_common_platform(platform: Platform, args: CommonArgs) ->
     );
     let output_path = request.output_dir.join(&filename);
     let saved_path =
-        execute_common_download(&downloader, &video, &output_path, &filename, &request).await?;
+        execute_common_download(&cfg, &downloader, &video, &output_path, &filename, &request)
+            .await?;
 
     print_download_summary(&saved_path)?;
     Ok(())
@@ -148,7 +152,7 @@ pub(crate) async fn run_spotify(args: SpotifyArgs) -> Result<()> {
     let downloader = downloader::build(&cfg).await?;
 
     tui::print_header(Platform::Spotify.label(), "Downloading");
-    let video = fetch_video(&downloader, &request.url).await?;
+    let video = fetch_video(&downloader, &cfg, &request.url).await?;
     tui::print_spotify_metadata(&video);
 
     if cfg.confirm_before_download && !request.yes && !tui::confirm_download(&video.title)? {
@@ -331,18 +335,95 @@ async fn search_for_url(
     )))
 }
 
-async fn fetch_video(downloader: &Downloader, url: &str) -> Result<yt_dlp::model::Video> {
+async fn fetch_video(downloader: &Downloader, cfg: &Config, url: &str) -> Result<Video> {
     let spinner = tui::spinner("Fetching video info...");
-    let video = downloader
-        .fetch_video_infos(url)
-        .await
-        .with_context(|| format!("Failed to fetch video info for {url}"))?;
+    let video = match downloader.fetch_video_infos(url).await {
+        Ok(video) => video,
+        // yt-dlp 2.6.0's Video model requires fields that some extractors (notably TikTok)
+        // return as missing or null. Fall back to raw `yt-dlp -J` output and normalize them.
+        Err(YtDlpError::Json { .. }) => fetch_video_via_raw_json(cfg, url)
+            .await
+            .with_context(|| format!("Failed to fetch video info for {url}"))?,
+        Err(err) => {
+            return Err(err).with_context(|| format!("Failed to fetch video info for {url}"))
+        }
+    };
 
     tui::spinner_ok(&spinner, "Fetched video info");
     Ok(video)
 }
 
+async fn fetch_video_via_raw_json(cfg: &Config, url: &str) -> Result<Video> {
+    let output = tokio::process::Command::new(sandbox::ytdlp_path(cfg))
+        .arg("-J")
+        .arg(url)
+        .output()
+        .await
+        .with_context(|| format!("Failed to execute sandboxed yt-dlp for {url}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        bail!(
+            "Sandboxed yt-dlp metadata fetch failed for {url}: {}",
+            if stderr.is_empty() {
+                "Unknown error"
+            } else {
+                &stderr
+            }
+        );
+    }
+
+    let mut value: Value = serde_json::from_slice(&output.stdout)
+        .with_context(|| format!("Failed to parse raw yt-dlp metadata for {url}"))?;
+
+    normalize_video_json(&mut value);
+
+    let mut video: Video = serde_json::from_value(value)
+        .with_context(|| format!("Failed to deserialize normalized metadata for {url}"))?;
+
+    for format in &mut video.formats {
+        format.video_id = Some(video.id.clone());
+    }
+
+    Ok(video)
+}
+
+fn normalize_video_json(value: &mut Value) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+
+    set_default_scalar(object, "age_limit", json!(0));
+    set_default_scalar(object, "live_status", json!("not_live"));
+    set_default_scalar(object, "playable_in_embed", json!(true));
+    set_default_array(object, "formats");
+    set_default_array(object, "thumbnails");
+    set_default_object(object, "automatic_captions");
+    set_default_object(object, "subtitles");
+    set_default_array(object, "tags");
+    set_default_array(object, "categories");
+}
+
+fn set_default_scalar(object: &mut Map<String, Value>, key: &str, default: Value) {
+    if matches!(object.get(key), None | Some(Value::Null)) {
+        object.insert(key.to_string(), default);
+    }
+}
+
+fn set_default_array(object: &mut Map<String, Value>, key: &str) {
+    if matches!(object.get(key), None | Some(Value::Null)) {
+        object.insert(key.to_string(), Value::Array(Vec::new()));
+    }
+}
+
+fn set_default_object(object: &mut Map<String, Value>, key: &str) {
+    if matches!(object.get(key), None | Some(Value::Null)) {
+        object.insert(key.to_string(), Value::Object(Map::new()));
+    }
+}
+
 async fn execute_common_download(
+    cfg: &Config,
     downloader: &Downloader,
     video: &yt_dlp::model::Video,
     output_path: &Path,
@@ -358,7 +439,16 @@ async fn execute_common_download(
     } else if request.video_only {
         execute_video_only_download(downloader, video, output_path, request, &progress).await
     } else {
-        execute_full_download(downloader, video, output_path, request, &progress).await
+        execute_full_download(
+            cfg,
+            downloader,
+            video,
+            output_path,
+            filename,
+            request,
+            &progress,
+        )
+        .await
     };
 
     match result {
@@ -374,23 +464,32 @@ async fn execute_common_download(
 }
 
 async fn execute_full_download(
+    cfg: &Config,
     downloader: &Downloader,
     video: &yt_dlp::model::Video,
     output_path: &Path,
+    filename: &str,
     request: &CommonRequest,
     progress: &indicatif::ProgressBar,
 ) -> Result<PathBuf> {
     let progress_for_callback = progress.clone();
-
-    downloader
+    let result = downloader
         .download(video, output_path.to_path_buf())
         .video_quality(map_quality(&request.quality))
         .video_codec(VideoCodecPreference::AVC1)
         .audio_quality(AudioQuality::Best)
         .with_progress(move |fraction| tui::update_progress_bar(&progress_for_callback, fraction))
         .execute()
-        .await
-        .context("Failed to download video")
+        .await;
+
+    match result {
+        Ok(path) => Ok(path),
+        Err(YtDlpError::FormatNotAvailable { .. }) => {
+            tui::clear_progress(progress);
+            execute_combined_video_download(cfg, downloader, video, output_path, filename).await
+        }
+        Err(err) => Err(err).context("Failed to download video"),
+    }
 }
 
 async fn execute_audio_download(
@@ -429,6 +528,74 @@ async fn execute_video_only_download(
         .execute_video_stream()
         .await
         .context("Failed to download video stream")
+}
+
+async fn execute_combined_video_download(
+    cfg: &Config,
+    downloader: &Downloader,
+    video: &yt_dlp::model::Video,
+    output_path: &Path,
+    filename: &str,
+) -> Result<PathBuf> {
+    let spinner = tui::spinner(&format!("Downloading {filename}..."));
+    let format = video
+        .best_audio_video_format()
+        .context("No combined video format available")?;
+
+    match downloader
+        .download_format_to_path(format, output_path.to_path_buf())
+        .await
+    {
+        Ok(path) => {
+            tui::spinner_ok(&spinner, &format!("Downloaded {filename}"));
+            Ok(path)
+        }
+        Err(err) => match execute_binary_video_download(cfg, video, output_path).await {
+            Ok(path) => {
+                tui::spinner_ok(&spinner, &format!("Downloaded {filename}"));
+                Ok(path)
+            }
+            Err(binary_err) => {
+                tui::spinner_err(&spinner, "Failed to download combined video format");
+                Err(binary_err).context(format!(
+                    "Failed to download combined video format after crate fallback error: {err}"
+                ))
+            }
+        },
+    }
+}
+
+async fn execute_binary_video_download(
+    cfg: &Config,
+    video: &yt_dlp::model::Video,
+    output_path: &Path,
+) -> Result<PathBuf> {
+    let url = video
+        .webpage_url
+        .as_deref()
+        .context("Video metadata did not contain a source URL for yt-dlp fallback")?;
+
+    let output = tokio::process::Command::new(sandbox::ytdlp_path(cfg))
+        .arg("-o")
+        .arg(output_path.as_os_str())
+        .arg(url)
+        .output()
+        .await
+        .with_context(|| format!("Failed to execute sandboxed yt-dlp download for {url}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        bail!(
+            "{}",
+            if stderr.is_empty() {
+                format!("Sandboxed yt-dlp download failed for {url}")
+            } else {
+                stderr
+            }
+        );
+    }
+
+    Ok(output_path.to_path_buf())
 }
 
 fn print_download_summary(saved_path: &Path) -> Result<()> {
@@ -673,6 +840,35 @@ mod tests {
             .expect("tilde output path should resolve");
 
         assert_eq!(output, home.join("Downloads/vdl"));
+    }
+
+    #[test]
+    fn normalize_video_json_fills_required_defaults() {
+        let mut value = json!({
+            "id": "abc",
+            "title": "TikTok clip",
+            "formats": null,
+            "thumbnails": null,
+            "automatic_captions": null,
+            "subtitles": null,
+            "tags": null,
+            "categories": null,
+            "age_limit": null,
+            "live_status": null,
+            "playable_in_embed": null
+        });
+
+        normalize_video_json(&mut value);
+
+        assert_eq!(value["age_limit"], json!(0));
+        assert_eq!(value["live_status"], json!("not_live"));
+        assert_eq!(value["playable_in_embed"], json!(true));
+        assert_eq!(value["formats"], json!([]));
+        assert_eq!(value["thumbnails"], json!([]));
+        assert_eq!(value["automatic_captions"], json!({}));
+        assert_eq!(value["subtitles"], json!({}));
+        assert_eq!(value["tags"], json!([]));
+        assert_eq!(value["categories"], json!([]));
     }
 
     #[test]
