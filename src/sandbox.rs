@@ -252,6 +252,8 @@ mod tests {
                 spotify: "best".to_string(),
             },
             bins_dir: "~/.local/share/vdl/bins".to_string(),
+            cookies_file: None,
+            cookies_from_browser: None,
             confirm_before_download: true,
             search_results_count: 8,
         }

@@ -1,6 +1,6 @@
 [package]
 name = "vdl"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.75"
 description = "A fast, interactive terminal video downloader for YouTube, TikTok, Instagram, Twitter and Spotify"

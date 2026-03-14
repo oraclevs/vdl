@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Map, Value};
 use yt_dlp::error::Error as YtDlpError;
+use yt_dlp::events::{DownloadEvent, PostProcessOperation};
 use yt_dlp::model::selector::{
     AudioCodecPreference, AudioQuality, VideoCodecPreference, VideoQuality,
 };
@@ -83,6 +84,171 @@ impl Platform {
     fn supports_search(self) -> bool {
         matches!(self, Platform::YouTube)
     }
+
+    fn auth_hint(self) -> Option<&'static str> {
+        match self {
+            Platform::YouTube => Some(
+                "Tip: Some YouTube videos require authentication. Set cookies_from_browser or cookies_file in ~/.config/vdl/config.yaml and run `vdl update` if extractor support is outdated.",
+            ),
+            Platform::Instagram => Some(
+                "Tip: Some Instagram posts require login. Set cookies_from_browser or cookies_file in ~/.config/vdl/config.yaml.",
+            ),
+            Platform::Spotify => Some(
+                "Tip: Spotify downloads may require authentication. Set cookies_from_browser or cookies_file in ~/.config/vdl/config.yaml.",
+            ),
+            Platform::TikTok | Platform::Twitter => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DownloadUiMode {
+    Combined,
+    AudioOnly,
+    VideoOnly,
+}
+
+impl DownloadUiMode {
+    fn initial_message(self) -> &'static str {
+        match self {
+            Self::Combined => "3/4 Preparing media streams...",
+            Self::AudioOnly => "3/4 Preparing audio download...",
+            Self::VideoOnly => "3/4 Preparing video download...",
+        }
+    }
+
+    fn started_message(self, started_downloads: usize) -> &'static str {
+        match self {
+            Self::Combined if started_downloads <= 1 => "3/4 Downloading video stream...",
+            Self::Combined => "3/4 Downloading audio stream...",
+            Self::AudioOnly => "3/4 Downloading audio stream...",
+            Self::VideoOnly => "3/4 Downloading video stream...",
+        }
+    }
+
+    fn completed_message(self, completed_downloads: usize) -> &'static str {
+        match self {
+            Self::Combined if completed_downloads == 1 => "3/4 Waiting for the audio stream...",
+            Self::Combined => "3/4 Finalising media...",
+            Self::AudioOnly => "3/4 Finalising audio file...",
+            Self::VideoOnly => "3/4 Finalising video file...",
+        }
+    }
+
+    fn post_process_message(self, operation: &PostProcessOperation) -> &'static str {
+        match (self, operation) {
+            (Self::Combined, PostProcessOperation::CombineStreams { .. }) => {
+                "3/4 Merging video and audio..."
+            }
+            (_, PostProcessOperation::SplitChapters { .. }) => "3/4 Splitting chapters...",
+            _ => "3/4 Applying post-processing...",
+        }
+    }
+}
+
+struct DownloadUiSession {
+    stop_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    handle: tokio::task::JoinHandle<()>,
+}
+
+impl DownloadUiSession {
+    fn start(
+        downloader: &Downloader,
+        progress: &indicatif::ProgressBar,
+        mode: DownloadUiMode,
+    ) -> Self {
+        let mut receiver = downloader.subscribe_events();
+        let progress = progress.clone();
+        let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel();
+
+        tui::set_progress_message(&progress, mode.initial_message());
+
+        let handle = tokio::spawn(async move {
+            let mut started_downloads = 0usize;
+            let mut completed_downloads = 0usize;
+
+            loop {
+                tokio::select! {
+                    _ = &mut stop_rx => break,
+                    event = receiver.recv() => match event {
+                        Ok(event) => match &*event {
+                            DownloadEvent::DownloadQueued { .. } => {
+                                tui::set_progress_message(&progress, mode.initial_message());
+                            }
+                            DownloadEvent::DownloadStarted { .. } => {
+                                started_downloads += 1;
+                                tui::set_progress_message(
+                                    &progress,
+                                    mode.started_message(started_downloads),
+                                );
+                            }
+                            DownloadEvent::DownloadCompleted { .. } => {
+                                completed_downloads += 1;
+                                match mode {
+                                    DownloadUiMode::Combined => {
+                                        if completed_downloads == 1 {
+                                            tui::advance_progress_bar(&progress, 0.55);
+                                        } else {
+                                            tui::advance_progress_bar(&progress, 0.9);
+                                        }
+                                    }
+                                    DownloadUiMode::AudioOnly | DownloadUiMode::VideoOnly => {
+                                        tui::advance_progress_bar(&progress, 0.95);
+                                    }
+                                }
+                                tui::set_progress_message(
+                                    &progress,
+                                    mode.completed_message(completed_downloads),
+                                );
+                            }
+                            DownloadEvent::PostProcessStarted { operation, .. } => {
+                                tui::advance_progress_bar(&progress, 0.95);
+                                tui::set_progress_message(
+                                    &progress,
+                                    mode.post_process_message(operation),
+                                );
+                            }
+                            DownloadEvent::MetadataApplied { .. } => {
+                                tui::advance_progress_bar(&progress, 0.98);
+                                tui::set_progress_message(
+                                    &progress,
+                                    "3/4 Writing metadata...",
+                                );
+                            }
+                            DownloadEvent::ChaptersEmbedded { .. } => {
+                                tui::advance_progress_bar(&progress, 0.98);
+                                tui::set_progress_message(
+                                    &progress,
+                                    "3/4 Embedding chapters...",
+                                );
+                            }
+                            DownloadEvent::PostProcessCompleted { .. } => {
+                                tui::advance_progress_bar(&progress, 0.99);
+                                tui::set_progress_message(
+                                    &progress,
+                                    "3/4 Post-processing complete...",
+                                );
+                            }
+                            _ => {}
+                        },
+                        Err(_) => break,
+                    }
+                }
+            }
+        });
+
+        Self {
+            stop_tx: Some(stop_tx),
+            handle,
+        }
+    }
+
+    async fn stop(mut self) {
+        if let Some(stop_tx) = self.stop_tx.take() {
+            let _ = stop_tx.send(());
+        }
+        let _ = self.handle.await;
+    }
 }
 
 pub(crate) async fn run_common_platform(platform: Platform, args: CommonArgs) -> Result<()> {
@@ -90,20 +256,18 @@ pub(crate) async fn run_common_platform(platform: Platform, args: CommonArgs) ->
         return Ok(());
     };
 
-    sandbox::ensure_installed(&cfg).await?;
     let request = normalize_common_args(platform, args, &cfg)?;
-
-    fs::create_dir_all(&request.output_dir).with_context(|| {
-        format!(
-            "Failed to create output directory at {}",
-            request.output_dir.display()
-        )
-    })?;
-
-    let downloader = downloader::build(&cfg).await?;
+    tui::print_header(
+        platform.label(),
+        if request.url.is_some() {
+            "Downloading"
+        } else {
+            "Searching"
+        },
+    );
+    let downloader = prepare_download_environment(&cfg, &request.output_dir).await?;
 
     let url = if let Some(url) = request.url.clone() {
-        tui::print_header(platform.label(), "Downloading");
         url
     } else {
         let query = request
@@ -119,7 +283,13 @@ pub(crate) async fn run_common_platform(platform: Platform, args: CommonArgs) ->
         }
     };
 
-    let video = fetch_video(&downloader, &cfg, &url).await?;
+    let video =
+        fetch_video(&downloader, &cfg, &url)
+            .await
+            .map_err(|err| match platform.auth_hint() {
+                Some(hint) => err.context(hint),
+                None => err,
+            })?;
     tui::print_metadata(&video);
 
     if cfg.confirm_before_download && !request.yes && !tui::confirm_download(&video.title)? {
@@ -146,20 +316,15 @@ pub(crate) async fn run_spotify(args: SpotifyArgs) -> Result<()> {
         return Ok(());
     };
 
-    sandbox::ensure_installed(&cfg).await?;
     let request = normalize_spotify_args(args, &cfg)?;
-
-    fs::create_dir_all(&request.output_dir).with_context(|| {
-        format!(
-            "Failed to create output directory at {}",
-            request.output_dir.display()
-        )
-    })?;
-
-    let downloader = downloader::build(&cfg).await?;
-
     tui::print_header(Platform::Spotify.label(), "Downloading");
-    let video = fetch_video(&downloader, &cfg, &request.url).await?;
+    let downloader = prepare_download_environment(&cfg, &request.output_dir).await?;
+    let video = fetch_video(&downloader, &cfg, &request.url)
+        .await
+        .map_err(|err| match Platform::Spotify.auth_hint() {
+            Some(hint) => err.context(hint),
+            None => err,
+        })?;
     tui::print_spotify_metadata(&video);
 
     if cfg.confirm_before_download && !request.yes && !tui::confirm_download(&video.title)? {
@@ -181,7 +346,7 @@ pub(crate) async fn run_spotify(args: SpotifyArgs) -> Result<()> {
         .download(&video, output_path.clone())
         .audio_quality(AudioQuality::Best)
         .audio_codec(audio_codec_for_format(&request.format))
-        .with_progress(move |fraction| tui::update_progress_bar(&progress_for_callback, fraction))
+        .with_progress(move |fraction| tui::advance_progress_bar(&progress_for_callback, fraction))
         .execute_audio_stream()
         .await;
 
@@ -193,7 +358,7 @@ pub(crate) async fn run_spotify(args: SpotifyArgs) -> Result<()> {
         Err(err) => {
             tui::clear_progress(&progress);
             return Err(err).context(
-                "Tip: Spotify downloads may require authentication. See vdl config for cookie options.",
+                "Tip: Spotify downloads may require authentication. Set cookies_from_browser or cookies_file in ~/.config/vdl/config.yaml.",
             );
         }
     };
@@ -299,7 +464,6 @@ async fn search_for_url(
     cfg: &Config,
     query: &str,
 ) -> Result<Option<String>> {
-    tui::print_header(platform.label(), "Searching");
     let spinner = tui::spinner(&format!(
         "Searching {} for \"{}\"...",
         platform.label(),
@@ -343,7 +507,7 @@ async fn search_for_url(
 }
 
 async fn fetch_video(downloader: &Downloader, cfg: &Config, url: &str) -> Result<Video> {
-    let spinner = tui::spinner("Fetching video info...");
+    let spinner = tui::spinner("2/4 Fetching video metadata...");
     let video = match downloader.fetch_video_infos(url).await {
         Ok(video) => video,
         // yt-dlp 2.6.0's Video model requires fields that some extractors (notably TikTok)
@@ -356,7 +520,7 @@ async fn fetch_video(downloader: &Downloader, cfg: &Config, url: &str) -> Result
         }
     };
 
-    tui::spinner_ok(&spinner, "Fetched video info");
+    tui::spinner_ok(&spinner, "2/4 Video metadata ready");
     Ok(video)
 }
 
@@ -437,7 +601,15 @@ async fn execute_common_download(
     filename: &str,
     request: &CommonRequest,
 ) -> Result<PathBuf> {
+    let mode = if request.audio_only {
+        DownloadUiMode::AudioOnly
+    } else if request.video_only {
+        DownloadUiMode::VideoOnly
+    } else {
+        DownloadUiMode::Combined
+    };
     let progress = tui::progress_bar(filename);
+    let ui_session = DownloadUiSession::start(downloader, &progress, mode);
     let temp_dir = cfg.download_path_expanded();
 
     // yt-dlp 2.6.0 exposes public progress callbacks for combined and stream downloads
@@ -458,11 +630,12 @@ async fn execute_common_download(
         )
         .await
     };
+    ui_session.stop().await;
 
     match result {
         Ok(path) => {
             tui::clear_progress(&progress);
-            if let Err(err) = cleanup_managed_temp_files(&temp_dir).await {
+            if let Err(err) = cleanup_download_artifacts(&temp_dir).await {
                 tui::print_warning(&format!(
                     "Download completed, but failed to clean temporary files in {}: {err}",
                     temp_dir.display()
@@ -472,7 +645,7 @@ async fn execute_common_download(
         }
         Err(err) => {
             tui::clear_progress(&progress);
-            if let Err(cleanup_err) = cleanup_managed_temp_files(&temp_dir).await {
+            if let Err(cleanup_err) = cleanup_download_artifacts(&temp_dir).await {
                 tui::print_warning(&format!(
                     "Failed to clean temporary files in {} after download error: {cleanup_err}",
                     temp_dir.display()
@@ -498,7 +671,7 @@ async fn execute_full_download(
         .video_quality(map_quality(&request.quality))
         .video_codec(VideoCodecPreference::AVC1)
         .audio_quality(AudioQuality::Best)
-        .with_progress(move |fraction| tui::update_progress_bar(&progress_for_callback, fraction))
+        .with_progress(move |fraction| tui::advance_progress_bar(&progress_for_callback, fraction))
         .execute()
         .await;
 
@@ -525,7 +698,7 @@ async fn execute_audio_download(
         .download(video, output_path.to_path_buf())
         .audio_quality(AudioQuality::Best)
         .audio_codec(audio_codec_for_format(&request.format))
-        .with_progress(move |fraction| tui::update_progress_bar(&progress_for_callback, fraction))
+        .with_progress(move |fraction| tui::advance_progress_bar(&progress_for_callback, fraction))
         .execute_audio_stream()
         .await
         .context("Failed to download audio stream")
@@ -544,7 +717,7 @@ async fn execute_video_only_download(
         .download(video, output_path.to_path_buf())
         .video_quality(map_quality(&request.quality))
         .video_codec(VideoCodecPreference::AVC1)
-        .with_progress(move |fraction| tui::update_progress_bar(&progress_for_callback, fraction))
+        .with_progress(move |fraction| tui::advance_progress_bar(&progress_for_callback, fraction))
         .execute_video_stream()
         .await
         .context("Failed to download video stream")
@@ -654,6 +827,32 @@ fn resolve_output_dir(override_dir: Option<PathBuf>, fallback: PathBuf) -> Resul
     }
 }
 
+async fn prepare_download_environment(cfg: &Config, output_dir: &Path) -> Result<Downloader> {
+    let spinner = tui::spinner("1/4 Preparing download environment...");
+    let result = async {
+        sandbox::ensure_installed(cfg).await?;
+        fs::create_dir_all(output_dir).with_context(|| {
+            format!(
+                "Failed to create output directory at {}",
+                output_dir.display()
+            )
+        })?;
+        downloader::build(cfg).await
+    }
+    .await;
+
+    match result {
+        Ok(downloader) => {
+            tui::spinner_ok(&spinner, "1/4 Download environment ready");
+            Ok(downloader)
+        }
+        Err(err) => {
+            tui::spinner_err(&spinner, "1/4 Failed to prepare download environment");
+            Err(err)
+        }
+    }
+}
+
 async fn cleanup_managed_temp_files(dir: &Path) -> Result<usize> {
     let mut removed = 0usize;
     let mut entries = match tokio::fs::read_dir(dir).await {
@@ -694,6 +893,29 @@ async fn cleanup_managed_temp_files(dir: &Path) -> Result<usize> {
     }
 
     Ok(removed)
+}
+
+async fn cleanup_download_artifacts(dir: &Path) -> Result<usize> {
+    let spinner = tui::spinner("4/4 Cleaning temporary files...");
+    let result = cleanup_managed_temp_files(dir).await;
+
+    match result {
+        Ok(removed) => {
+            let message = if removed == 0 {
+                "4/4 Cleanup complete".to_string()
+            } else if removed == 1 {
+                "4/4 Removed 1 temporary file".to_string()
+            } else {
+                format!("4/4 Removed {removed} temporary files")
+            };
+            tui::spinner_ok(&spinner, &message);
+            Ok(removed)
+        }
+        Err(err) => {
+            tui::spinner_err(&spinner, "4/4 Cleanup failed");
+            Err(err)
+        }
+    }
 }
 
 fn normalize_optional_text(value: Option<String>) -> Option<String> {

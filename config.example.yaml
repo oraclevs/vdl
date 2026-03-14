@@ -24,6 +24,15 @@ platform_quality:
 # Do NOT change this unless you know what you are doing
 bins_dir: ~/.local/share/vdl/bins
 
+# Optional Netscape cookies file for sites that require authentication
+# Set to null to disable
+cookies_file: null
+
+# Optional browser name to import cookies from
+# Examples: chrome | firefox | brave | edge
+# Set to null to disable
+cookies_from_browser: null
+
 # Show video metadata preview and prompt before downloading
 confirm_before_download: true
 

@@ -181,6 +181,41 @@ pub fn update_progress_bar(pb: &ProgressBar, fraction: f64) {
     update_download_bar(pb, (clamped * 1000.0).round() as u64, 1000);
 }
 
+/// Updates the label shown next to a progress indicator.
+///
+/// # Arguments
+///
+/// * `pb` - Progress bar created by [`progress_bar`] or [`download_bar`].
+/// * `msg` - Message shown next to the progress indicator.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// set_progress_message(&pb, "2/4 Downloading audio stream...");
+/// ```
+pub fn set_progress_message(pb: &ProgressBar, msg: &str) {
+    pb.set_message(msg.to_string());
+}
+
+/// Advances a percentage-based progress bar to at least the given fraction.
+///
+/// # Arguments
+///
+/// * `pb` - Progress bar created by [`progress_bar`].
+/// * `fraction` - Minimum progress in the inclusive range `0.0..=1.0`.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// advance_progress_bar(&pb, 0.9);
+/// ```
+pub fn advance_progress_bar(pb: &ProgressBar, fraction: f64) {
+    let target = (fraction.clamp(0.0, 1.0) * 1000.0).round() as u64;
+    if target > pb.position() {
+        update_progress_bar(pb, fraction);
+    }
+}
+
 /// Clears an active progress indicator from the terminal.
 ///
 /// # Arguments

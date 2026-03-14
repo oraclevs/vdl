@@ -22,6 +22,12 @@ pub struct Config {
     pub platform_quality: PlatformQuality,
     /// Points at the sandbox directory where `yt-dlp` and `ffmpeg` binaries are stored.
     pub bins_dir: String,
+    /// Optionally points at a Netscape cookie file for authenticated downloads.
+    #[serde(default)]
+    pub cookies_file: Option<String>,
+    /// Optionally names a browser to extract cookies from for authenticated downloads.
+    #[serde(default)]
+    pub cookies_from_browser: Option<String>,
     /// Controls whether metadata preview confirmation is shown before downloads start.
     pub confirm_before_download: bool,
     /// Limits the number of interactive YouTube search results displayed to the user.
@@ -98,6 +104,15 @@ impl Config {
     /// Expands a leading `~` in [`Config::bins_dir`] to the current user's home directory.
     pub fn bins_dir_expanded(&self) -> PathBuf {
         expand_tilde(&self.bins_dir)
+    }
+
+    /// Expands a leading `~` in [`Config::cookies_file`] when a cookie file is configured.
+    pub fn cookies_file_expanded(&self) -> Option<PathBuf> {
+        self.cookies_file
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(expand_tilde)
     }
 }
 
@@ -197,6 +212,8 @@ mod tests {
         assert_eq!(cfg.platform_quality.youtube, "1080");
         assert_eq!(cfg.platform_quality.spotify, "best");
         assert_eq!(cfg.bins_dir, "~/.local/share/vdl/bins");
+        assert_eq!(cfg.cookies_file, None);
+        assert_eq!(cfg.cookies_from_browser, None);
         assert!(cfg.confirm_before_download);
         assert_eq!(cfg.search_results_count, 8);
     }
@@ -255,6 +272,7 @@ mod tests {
             cfg.bins_dir_expanded(),
             expand_tilde("~/.local/share/vdl/bins")
         );
+        assert_eq!(cfg.cookies_file_expanded(), None);
 
         fs::remove_dir_all(
             path.parent()

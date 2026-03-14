@@ -126,12 +126,21 @@ platform_quality:
 # Path where yt-dlp and ffmpeg are stored (sandboxed)
 bins_dir: ~/.local/share/vdl/bins
 
+# Optional Netscape cookies file for authenticated downloads
+cookies_file: null
+
+# Optional browser to import cookies from: chrome | firefox | brave | edge
+cookies_from_browser: null
+
 # Show metadata and prompt before every download
 confirm_before_download: true
 
 # Number of search results to display
 search_results_count: 8
 ```
+
+For Instagram, Spotify, and login-gated YouTube videos, set either
+`cookies_file` or `cookies_from_browser` before downloading.
 
 ## License
 
