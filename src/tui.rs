@@ -146,6 +146,25 @@ pub fn print_first_run(config_path: &str) {
     print_info("  Please edit it to set your download path, then run vdl again.");
 }
 
+pub fn print_config_path(path: &str) {
+    let mut stdout = io::stdout().lock();
+    let _ = writeln!(stdout, "Config path: {}", path.cyan());
+}
+
+pub fn print_missing_config(path: &str) {
+    print_warning("No config file found.");
+    let mut stdout = io::stdout().lock();
+    let _ = writeln!(stdout, "Expected path: {}", path.cyan());
+}
+
+pub fn print_yaml(contents: &str) {
+    let mut stdout = io::stdout().lock();
+
+    for line in contents.lines() {
+        let _ = writeln!(stdout, "{}", format_yaml_line(line));
+    }
+}
+
 pub fn prompt_input(prompt: &str) -> Result<String> {
     Input::<String>::new()
         .with_prompt(prompt)
@@ -250,6 +269,43 @@ fn header_line(platform: &str, action: &str) -> String {
         base
     } else {
         format!("{base}{}", "─".repeat(HEADER_WIDTH - base_width))
+    }
+}
+
+fn format_yaml_line(line: &str) -> String {
+    if line.trim().is_empty() {
+        return String::new();
+    }
+
+    if line.trim_start().starts_with('#') {
+        return line.dimmed().to_string();
+    }
+
+    if let Some((indent, key, rest)) = split_yaml_mapping_line(line) {
+        if rest.is_empty() {
+            format!("{indent}{}:", key.yellow())
+        } else {
+            format!("{indent}{}:{}", key.yellow(), rest.white())
+        }
+    } else {
+        line.white().to_string()
+    }
+}
+
+fn split_yaml_mapping_line(line: &str) -> Option<(&str, &str, &str)> {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with('#') {
+        return None;
+    }
+
+    let indent_len = line.len() - trimmed.len();
+    let indent = &line[..indent_len];
+    let (key, rest) = trimmed.split_once(':')?;
+
+    if key.trim().is_empty() {
+        None
+    } else {
+        Some((indent, key, rest))
     }
 }
 
@@ -425,6 +481,31 @@ mod tests {
         assert_eq!(format_number(0), "0");
         assert_eq!(format_number(12_345), "12,345");
         assert_eq!(format_number(1_234_567), "1,234,567");
+    }
+
+    #[test]
+    fn yaml_mapping_lines_are_split_correctly() {
+        assert_eq!(
+            split_yaml_mapping_line("  youtube:   1080"),
+            Some(("  ", "youtube", "   1080"))
+        );
+        assert_eq!(
+            split_yaml_mapping_line("platform_quality:"),
+            Some(("", "platform_quality", ""))
+        );
+        assert_eq!(split_yaml_mapping_line("# comment"), None);
+    }
+
+    #[test]
+    fn yaml_line_formatter_preserves_structure() {
+        colored::control::set_override(false);
+
+        assert_eq!(
+            format_yaml_line("download_path: ~/Downloads/vdl"),
+            "download_path: ~/Downloads/vdl"
+        );
+        assert_eq!(format_yaml_line("  youtube:   1080"), "  youtube:   1080");
+        assert_eq!(format_yaml_line(""), "");
     }
 
     #[test]
