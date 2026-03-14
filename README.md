@@ -45,6 +45,10 @@ That's it. On first run, `vdl` creates a config file at
 downloads `yt-dlp` and `ffmpeg` automatically into
 `~/.local/share/vdl/bins/`.
 
+On Termux, `vdl` auto-detects the environment, applies the certificate
+bundle path for HTTPS downloads, and falls back to plain progress lines
+instead of animated spinners.
+
 **Prerequisites:** Rust 1.75 or newer. Install from https://rustup.rs.
 
 ## Quick Start
@@ -137,6 +141,12 @@ confirm_before_download: true
 
 # Number of search results to display
 search_results_count: 8
+
+# Auto-detected on Android / Termux
+termux_mode: false
+
+# Forced on automatically when termux_mode is true
+no_progress: false
 ```
 
 For Instagram, Spotify, and login-gated YouTube videos, set either

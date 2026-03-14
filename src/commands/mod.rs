@@ -338,7 +338,7 @@ pub(crate) async fn run_spotify(args: SpotifyArgs) -> Result<()> {
         request.format.as_str()
     );
     let output_path = request.output_dir.join(&filename);
-    let progress = tui::progress_bar(&filename);
+    let progress = tui::progress_bar(&filename, cfg.no_progress);
     let progress_for_callback = progress.clone();
 
     // yt-dlp 2.6.0 exposes public progress callbacks for stream downloads via DownloadBuilder::with_progress(f64).
@@ -464,11 +464,10 @@ async fn search_for_url(
     cfg: &Config,
     query: &str,
 ) -> Result<Option<String>> {
-    let spinner = tui::spinner(&format!(
-        "Searching {} for \"{}\"...",
-        platform.label(),
-        query
-    ));
+    let spinner = tui::spinner(
+        &format!("Searching {} for \"{}\"...", platform.label(), query),
+        cfg.no_progress,
+    );
 
     if !platform.supports_search() {
         tui::clear_progress(&spinner);
@@ -507,7 +506,7 @@ async fn search_for_url(
 }
 
 async fn fetch_video(downloader: &Downloader, cfg: &Config, url: &str) -> Result<Video> {
-    let spinner = tui::spinner("2/4 Fetching video metadata...");
+    let spinner = tui::spinner("2/4 Fetching video metadata...", cfg.no_progress);
     let video = match downloader.fetch_video_infos(url).await {
         Ok(video) => video,
         // yt-dlp 2.6.0's Video model requires fields that some extractors (notably TikTok)
@@ -608,7 +607,7 @@ async fn execute_common_download(
     } else {
         DownloadUiMode::Combined
     };
-    let progress = tui::progress_bar(filename);
+    let progress = tui::progress_bar(filename, cfg.no_progress);
     let ui_session = DownloadUiSession::start(downloader, &progress, mode);
     let temp_dir = cfg.download_path_expanded();
 
@@ -635,7 +634,7 @@ async fn execute_common_download(
     match result {
         Ok(path) => {
             tui::clear_progress(&progress);
-            if let Err(err) = cleanup_download_artifacts(&temp_dir).await {
+            if let Err(err) = cleanup_download_artifacts(&temp_dir, cfg.no_progress).await {
                 tui::print_warning(&format!(
                     "Download completed, but failed to clean temporary files in {}: {err}",
                     temp_dir.display()
@@ -645,7 +644,7 @@ async fn execute_common_download(
         }
         Err(err) => {
             tui::clear_progress(&progress);
-            if let Err(cleanup_err) = cleanup_download_artifacts(&temp_dir).await {
+            if let Err(cleanup_err) = cleanup_download_artifacts(&temp_dir, cfg.no_progress).await {
                 tui::print_warning(&format!(
                     "Failed to clean temporary files in {} after download error: {cleanup_err}",
                     temp_dir.display()
@@ -730,7 +729,7 @@ async fn execute_combined_video_download(
     output_path: &Path,
     filename: &str,
 ) -> Result<PathBuf> {
-    let spinner = tui::spinner(&format!("Downloading {filename}..."));
+    let spinner = tui::spinner(&format!("Downloading {filename}..."), cfg.no_progress);
     let format = video
         .best_audio_video_format()
         .context("No combined video format available")?;
@@ -828,7 +827,7 @@ fn resolve_output_dir(override_dir: Option<PathBuf>, fallback: PathBuf) -> Resul
 }
 
 async fn prepare_download_environment(cfg: &Config, output_dir: &Path) -> Result<Downloader> {
-    let spinner = tui::spinner("1/4 Preparing download environment...");
+    let spinner = tui::spinner("1/4 Preparing download environment...", cfg.no_progress);
     let result = async {
         sandbox::ensure_installed(cfg).await?;
         fs::create_dir_all(output_dir).with_context(|| {
@@ -895,8 +894,8 @@ async fn cleanup_managed_temp_files(dir: &Path) -> Result<usize> {
     Ok(removed)
 }
 
-async fn cleanup_download_artifacts(dir: &Path) -> Result<usize> {
-    let spinner = tui::spinner("4/4 Cleaning temporary files...");
+async fn cleanup_download_artifacts(dir: &Path, no_progress: bool) -> Result<usize> {
+    let spinner = tui::spinner("4/4 Cleaning temporary files...", no_progress);
     let result = cleanup_managed_temp_files(dir).await;
 
     match result {

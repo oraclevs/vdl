@@ -36,6 +36,10 @@ async fn main() {
 }
 
 async fn run() -> Result<()> {
+    if sandbox::is_termux() {
+        sandbox::apply_termux_env();
+    }
+
     let cli = cli::Cli::parse();
 
     match cli.command {

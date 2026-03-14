@@ -4,13 +4,57 @@
 //! instead of the system `PATH`, so `vdl` can update and invoke them without modifying the
 //! user's global toolchain.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use tokio::fs;
 use yt_dlp::client::deps::{Libraries, LibraryInstaller};
 
 use crate::{config::Config, downloader, tui};
+
+/// Returns `true` when `vdl` is running inside a Termux session on Android.
+///
+/// # Returns
+///
+/// Returns `true` when the `TERMUX_VERSION` environment variable is present or when the
+/// resolved home directory looks like a Termux-managed path.
+pub fn is_termux() -> bool {
+    is_termux_with(
+        std::env::var("TERMUX_VERSION").ok().as_deref(),
+        dirs::home_dir(),
+    )
+}
+
+/// Applies Termux-specific environment variables before any network work begins.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// if sandbox::is_termux() {
+///     sandbox::apply_termux_env();
+/// }
+/// ```
+pub fn apply_termux_env() {
+    let termux_cert = "/data/data/com.termux/files/usr/etc/tls/cert.pem";
+    if Path::new(termux_cert).exists() {
+        std::env::set_var("SSL_CERT_FILE", termux_cert);
+        std::env::set_var("REQUESTS_CA_BUNDLE", termux_cert);
+    }
+
+    let termux_prefix = "/data/data/com.termux/files/usr";
+    if Path::new(termux_prefix).exists() {
+        let termux_bin = format!("{termux_prefix}/bin");
+        let current_path = std::env::var("PATH").unwrap_or_default();
+        if !current_path.split(':').any(|segment| segment == termux_bin) {
+            let new_path = if current_path.is_empty() {
+                termux_bin
+            } else {
+                format!("{termux_bin}:{current_path}")
+            };
+            std::env::set_var("PATH", new_path);
+        }
+    }
+}
 
 /// Returns the expanded sandbox directory that stores `yt-dlp` and `ffmpeg`.
 ///
@@ -90,16 +134,18 @@ pub async fn ensure_installed(cfg: &Config) -> Result<()> {
     let installer = LibraryInstaller::new(dir);
 
     if !ytdlp_path(cfg).exists() {
-        install_ytdlp(&installer)
+        install_ytdlp(&installer, cfg.no_progress)
             .await
             .context("Failed to ensure sandboxed yt-dlp is installed")?;
     }
 
     if !ffmpeg_path(cfg).exists() {
-        install_ffmpeg(&installer)
+        install_ffmpeg(&installer, cfg.no_progress)
             .await
             .context("Failed to ensure sandboxed ffmpeg is installed")?;
     }
+
+    ensure_binary_permissions(cfg)?;
 
     Ok(())
 }
@@ -129,12 +175,12 @@ pub async fn update_binaries(cfg: &Config) -> Result<()> {
     let installer = LibraryInstaller::new(dir);
 
     if !ytdlp_path(cfg).exists() {
-        install_ytdlp(&installer)
+        install_ytdlp(&installer, cfg.no_progress)
             .await
             .context("Failed to ensure sandboxed yt-dlp is installed before update")?;
     }
 
-    let pb = tui::spinner("Updating vdl dependencies...");
+    let pb = tui::spinner("Updating vdl dependencies...", cfg.no_progress);
     let downloader = downloader::build(cfg)
         .await
         .context("Failed to initialise downloader for binary update")?;
@@ -148,10 +194,12 @@ pub async fn update_binaries(cfg: &Config) -> Result<()> {
     }
 
     if !ffmpeg_path(cfg).exists() {
-        install_ffmpeg(&installer)
+        install_ffmpeg(&installer, cfg.no_progress)
             .await
             .context("Failed to ensure sandboxed ffmpeg is installed after update")?;
     }
+
+    ensure_binary_permissions(cfg)?;
 
     Ok(())
 }
@@ -164,8 +212,8 @@ fn executable_name(base: &str) -> String {
     }
 }
 
-async fn install_ytdlp(installer: &LibraryInstaller) -> Result<()> {
-    let pb = tui::spinner("Downloading sandboxed yt-dlp...");
+async fn install_ytdlp(installer: &LibraryInstaller, no_progress: bool) -> Result<()> {
+    let pb = tui::spinner("Downloading sandboxed yt-dlp...", no_progress);
 
     match installer.install_youtube(None).await {
         Ok(path) => {
@@ -182,8 +230,8 @@ async fn install_ytdlp(installer: &LibraryInstaller) -> Result<()> {
     }
 }
 
-async fn install_ffmpeg(installer: &LibraryInstaller) -> Result<()> {
-    let pb = tui::spinner("Downloading sandboxed ffmpeg...");
+async fn install_ffmpeg(installer: &LibraryInstaller, no_progress: bool) -> Result<()> {
+    let pb = tui::spinner("Downloading sandboxed ffmpeg...", no_progress);
 
     match installer.install_ffmpeg(None).await {
         Ok(path) => {
@@ -200,8 +248,47 @@ async fn install_ffmpeg(installer: &LibraryInstaller) -> Result<()> {
     }
 }
 
+fn is_termux_with(termux_version: Option<&str>, home_dir: Option<PathBuf>) -> bool {
+    if termux_version.is_some() {
+        return true;
+    }
+
+    home_dir
+        .map(|home| home.to_string_lossy().contains("com.termux"))
+        .unwrap_or(false)
+}
+
+fn ensure_binary_permissions(cfg: &Config) -> Result<()> {
+    #[cfg(unix)]
+    {
+        set_executable_permissions_if_present(&ytdlp_path(cfg))?;
+        set_executable_permissions_if_present(&ffmpeg_path(cfg))?;
+    }
+
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_executable_permissions_if_present(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    if path.exists() {
+        let mut permissions = std::fs::metadata(path)
+            .with_context(|| format!("Failed to read permissions for {}", path.display()))?
+            .permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(path, permissions).with_context(|| {
+            format!("Failed to set executable permissions on {}", path.display())
+        })?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
+    use std::fs::File;
+
     use super::*;
     use crate::config::{Config, PlatformQuality};
 
@@ -239,6 +326,44 @@ mod tests {
         assert_eq!(libs.ffmpeg, ffmpeg_path(&cfg));
     }
 
+    #[test]
+    fn detects_termux_from_env_or_home_path() {
+        assert!(is_termux_with(Some("0.118.0"), None));
+        assert!(is_termux_with(
+            None,
+            Some(PathBuf::from("/data/data/com.termux/files/home"))
+        ));
+        assert!(!is_termux_with(None, Some(PathBuf::from("/home/occ"))));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn executable_permissions_are_applied_when_binary_exists() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = unique_test_dir("chmod");
+        std::fs::create_dir_all(&dir).expect("test dir should be created");
+        let path = dir.join("yt-dlp");
+
+        File::create(&path).expect("test binary should be created");
+        let mut permissions = std::fs::metadata(&path)
+            .expect("metadata should be readable")
+            .permissions();
+        permissions.set_mode(0o644);
+        std::fs::set_permissions(&path, permissions).expect("permissions should be set");
+
+        set_executable_permissions_if_present(&path).expect("chmod should succeed");
+
+        let mode = std::fs::metadata(&path)
+            .expect("metadata should be readable")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o755);
+
+        std::fs::remove_dir_all(&dir).expect("test dir cleanup should succeed");
+    }
+
     fn test_config() -> Config {
         Config {
             download_path: "~/Downloads/vdl".to_string(),
@@ -256,6 +381,17 @@ mod tests {
             cookies_from_browser: None,
             confirm_before_download: true,
             search_results_count: 8,
+            termux_mode: false,
+            no_progress: false,
         }
+    }
+
+    fn unique_test_dir(name: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time should be after epoch")
+            .as_nanos();
+
+        std::env::temp_dir().join(format!("vdl-sandbox-test-{name}-{nanos}"))
     }
 }

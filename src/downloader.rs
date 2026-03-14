@@ -103,6 +103,8 @@ mod tests {
             cookies_from_browser: None,
             confirm_before_download: true,
             search_results_count: 8,
+            termux_mode: false,
+            no_progress: false,
         }
     }
 }

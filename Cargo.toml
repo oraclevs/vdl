@@ -1,6 +1,6 @@
 [package]
 name = "vdl"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 rust-version = "1.75"
 description = "A fast, interactive terminal video downloader for YouTube, TikTok, Instagram, Twitter and Spotify"
@@ -24,7 +24,7 @@ name = "vdl"
 path = "src/main.rs"
 
 [dependencies]
-yt-dlp        = { version = "2.6.0", features = ["cache-memory"] }
+yt-dlp        = { version = "2.6.0", features = ["cache-memory", "rustls"] }
 tokio         = { version = "1", features = ["full"] }
 clap          = { version = "4", features = ["derive", "string"] }
 serde         = { version = "1", features = ["derive"] }
@@ -37,3 +37,9 @@ dialoguer     = "0.11"
 colored       = "2"
 dirs          = "5"
 tokio-stream  = "0.1"
+
+[target.'cfg(target_os = "android")'.dependencies]
+# reqwest 0.13 routes its rustls backend through rustls-platform-verifier on Android,
+# which panics in Termux because there is no hosted JVM to initialize the verifier.
+# Enabling native-tls for Android forces reqwest's default backend away from that path.
+reqwest       = { version = "0.13.2", default-features = false, features = ["native-tls", "json", "stream"] }

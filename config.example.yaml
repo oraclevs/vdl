@@ -38,3 +38,16 @@ confirm_before_download: true
 
 # Number of search results to show
 search_results_count: 8
+
+# ── Termux / Android ─────────────────────────────────────────
+#
+# Set to true if running on Android via Termux.
+# vdl auto-detects Termux via the TERMUX_VERSION environment
+# variable, so you normally do not need to set this manually.
+# Set it manually only if auto-detection is not working.
+termux_mode: false
+
+# Set to true to disable all animated spinners and progress bars.
+# Automatically enabled when termux_mode is true.
+# Also useful when piping vdl output to a log file.
+no_progress: false

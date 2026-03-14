@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
+use crate::sandbox;
+
 const CONFIG_DIR_RELATIVE: &str = ".config/vdl";
 const CONFIG_FILE_NAME: &str = "config.yaml";
 const EXAMPLE_CONFIG: &str = include_str!("../config.example.yaml");
@@ -32,6 +34,12 @@ pub struct Config {
     pub confirm_before_download: bool,
     /// Limits the number of interactive YouTube search results displayed to the user.
     pub search_results_count: usize,
+    /// Enables Termux-specific runtime behavior when the application runs inside Termux.
+    #[serde(default)]
+    pub termux_mode: bool,
+    /// Disables animated progress indicators in Termux and other non-interactive environments.
+    #[serde(default)]
+    pub no_progress: bool,
 }
 
 /// Stores per-platform quality preferences used when a command omits `--quality`.
@@ -55,7 +63,7 @@ impl Config {
     ///
     /// # Returns
     ///
-    /// Returns the deserialised [`Config`] value.
+    /// Returns the deserialised [`Config`] value with runtime overrides applied.
     ///
     /// # Errors
     ///
@@ -168,8 +176,21 @@ fn load_from_path(path: &Path) -> Result<Config> {
     let contents = fs::read_to_string(path)
         .with_context(|| format!("Failed to read config file at {}", path.display()))?;
 
-    serde_yaml::from_str(&contents)
-        .with_context(|| format!("Failed to parse config file at {}", path.display()))
+    let mut cfg: Config = serde_yaml::from_str(&contents)
+        .with_context(|| format!("Failed to parse config file at {}", path.display()))?;
+
+    apply_runtime_overrides(&mut cfg, sandbox::is_termux());
+    Ok(cfg)
+}
+
+fn apply_runtime_overrides(cfg: &mut Config, termux_detected: bool) {
+    if termux_detected {
+        cfg.termux_mode = true;
+    }
+
+    if cfg.termux_mode {
+        cfg.no_progress = true;
+    }
 }
 
 fn require_home_dir() -> Result<PathBuf> {
@@ -216,6 +237,8 @@ mod tests {
         assert_eq!(cfg.cookies_from_browser, None);
         assert!(cfg.confirm_before_download);
         assert_eq!(cfg.search_results_count, 8);
+        assert!(!cfg.termux_mode);
+        assert!(!cfg.no_progress);
     }
 
     #[test]
@@ -273,6 +296,8 @@ mod tests {
             expand_tilde("~/.local/share/vdl/bins")
         );
         assert_eq!(cfg.cookies_file_expanded(), None);
+        assert!(!cfg.termux_mode);
+        assert!(!cfg.no_progress);
 
         fs::remove_dir_all(
             path.parent()
@@ -280,6 +305,17 @@ mod tests {
                 .expect("test dir should exist"),
         )
         .expect("test dir cleanup should succeed");
+    }
+
+    #[test]
+    fn termux_override_enables_no_progress() {
+        let mut cfg: Config =
+            serde_yaml::from_str(EXAMPLE_CONFIG).expect("example config should parse");
+
+        apply_runtime_overrides(&mut cfg, true);
+
+        assert!(cfg.termux_mode);
+        assert!(cfg.no_progress);
     }
 
     fn unique_config_path(name: &str) -> PathBuf {

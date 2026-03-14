@@ -38,9 +38,16 @@ pub struct SearchResult {
 /// # Examples
 ///
 /// ```rust,ignore
-/// let pb = spinner("Fetching video info...");
+/// let pb = spinner("Fetching video info...", false);
 /// ```
-pub fn spinner(msg: &str) -> ProgressBar {
+pub fn spinner(msg: &str, no_progress: bool) -> ProgressBar {
+    if no_progress {
+        print_info(&format!("... {msg}"));
+        let pb = ProgressBar::hidden();
+        pb.set_message(msg.to_string());
+        return pb;
+    }
+
     let pb = ProgressBar::new_spinner();
     let style = ProgressStyle::with_template("{spinner:.cyan} {msg}")
         .map(|style| style.tick_strings(&SPINNER_TICKS))
@@ -65,6 +72,9 @@ pub fn spinner(msg: &str) -> ProgressBar {
 /// spinner_ok(&pb, "Fetched video info");
 /// ```
 pub fn spinner_ok(pb: &ProgressBar, msg: &str) {
+    if pb.is_hidden() {
+        print_success(msg);
+    }
     pb.finish_with_message(format!("{} {msg}", "✓".green()));
 }
 
@@ -81,6 +91,10 @@ pub fn spinner_ok(pb: &ProgressBar, msg: &str) {
 /// spinner_err(&pb, "Failed to download");
 /// ```
 pub fn spinner_err(pb: &ProgressBar, msg: &str) {
+    if pb.is_hidden() {
+        let mut stdout = io::stdout().lock();
+        let _ = writeln!(stdout, "{} {}", "✗".red(), msg.red());
+    }
     pb.finish_with_message(format!("{} {msg}", "✗".red()));
 }
 
@@ -98,9 +112,17 @@ pub fn spinner_err(pb: &ProgressBar, msg: &str) {
 /// # Examples
 ///
 /// ```rust,ignore
-/// let pb = download_bar(512 * 1024 * 1024, "movie.mp4");
+/// let pb = download_bar(512 * 1024 * 1024, "movie.mp4", false);
 /// ```
-pub fn download_bar(total_bytes: u64, filename: &str) -> ProgressBar {
+pub fn download_bar(total_bytes: u64, filename: &str, no_progress: bool) -> ProgressBar {
+    if no_progress {
+        print_info(&format!("... {filename}"));
+        let pb = ProgressBar::hidden();
+        pb.set_length(total_bytes);
+        pb.set_message(filename.to_string());
+        return pb;
+    }
+
     let pb = ProgressBar::new(total_bytes);
     let style = ProgressStyle::with_template(
         "{spinner:.cyan} {msg} [{bar:40.green/white}] {bytes}/{total_bytes} ({eta})",
@@ -147,10 +169,14 @@ pub fn update_download_bar(pb: &ProgressBar, downloaded: u64, total: u64) {
 /// # Examples
 ///
 /// ```rust,ignore
-/// let pb = progress_bar("episode.mp4");
+/// let pb = progress_bar("episode.mp4", false);
 /// ```
-pub fn progress_bar(filename: &str) -> ProgressBar {
-    let pb = download_bar(1000, filename);
+pub fn progress_bar(filename: &str, no_progress: bool) -> ProgressBar {
+    let pb = download_bar(1000, filename, no_progress);
+    if pb.is_hidden() {
+        return pb;
+    }
+
     let style =
         ProgressStyle::with_template("{spinner:.cyan} {msg} [{bar:40.green/white}] {percent:>3}%")
             .map(|style| style.tick_strings(&SPINNER_TICKS).progress_chars("█▓░"))
@@ -194,6 +220,13 @@ pub fn update_progress_bar(pb: &ProgressBar, fraction: f64) {
 /// set_progress_message(&pb, "2/4 Downloading audio stream...");
 /// ```
 pub fn set_progress_message(pb: &ProgressBar, msg: &str) {
+    if pb.message() == msg {
+        return;
+    }
+
+    if pb.is_hidden() {
+        print_info(&format!("... {msg}"));
+    }
     pb.set_message(msg.to_string());
 }
 
@@ -710,7 +743,7 @@ mod tests {
 
     #[test]
     fn spinner_finishes_with_success_message() {
-        let pb = spinner("Working...");
+        let pb = spinner("Working...", false);
         spinner_ok(&pb, "Done");
 
         assert!(pb.is_finished());
@@ -718,7 +751,7 @@ mod tests {
 
     #[test]
     fn download_bar_tracks_message_and_progress() {
-        let pb = download_bar(1024, "demo.mp4");
+        let pb = download_bar(1024, "demo.mp4", false);
         update_download_bar(&pb, 256, 2048);
 
         assert_eq!(pb.message(), "demo.mp4");
@@ -728,12 +761,20 @@ mod tests {
 
     #[test]
     fn progress_bar_tracks_fractional_progress() {
-        let pb = progress_bar("demo.mp4");
+        let pb = progress_bar("demo.mp4", false);
         update_progress_bar(&pb, 0.375);
 
         assert_eq!(pb.message(), "demo.mp4");
         assert_eq!(pb.length(), Some(1000));
         assert_eq!(pb.position(), 375);
+    }
+
+    #[test]
+    fn hidden_spinner_uses_no_progress_mode() {
+        let pb = spinner("Working...", true);
+
+        assert!(pb.is_hidden());
+        assert_eq!(pb.message(), "Working...");
     }
 
     #[test]
