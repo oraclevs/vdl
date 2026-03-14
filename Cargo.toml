@@ -8,3 +8,15 @@ name = "vdl"
 path = "src/main.rs"
 
 [dependencies]
+yt-dlp        = { version = "2.6.0", features = ["cache-memory"] }
+tokio         = { version = "1", features = ["full"] }
+clap          = { version = "4", features = ["derive", "string"] }
+serde         = { version = "1", features = ["derive"] }
+serde_yaml    = "0.9"
+anyhow        = "1"
+indicatif     = "0.17"
+console       = "0.15"
+dialoguer     = "0.11"
+colored       = "2"
+dirs          = "5"
+tokio-stream  = "0.1"
