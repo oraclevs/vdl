@@ -7,7 +7,7 @@ mod tui;
 
 use std::io::Write;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{CommandFactory, Parser};
 use colored::Colorize;
 
@@ -35,8 +35,10 @@ async fn run() -> Result<()> {
         Some(cli::Commands::Config) => commands::config_cmd::run().await,
         None => {
             let mut command = cli::Cli::command();
-            command.print_help()?;
-            std::io::stdout().write_all(b"\n")?;
+            command.print_help().context("Failed to render CLI help")?;
+            std::io::stdout()
+                .write_all(b"\n")
+                .context("Failed to write CLI help footer")?;
             Ok(())
         }
     }

@@ -31,11 +31,15 @@ pub async fn ensure_installed(cfg: &Config) -> Result<()> {
     let installer = LibraryInstaller::new(dir);
 
     if !ytdlp_path(cfg).exists() {
-        install_ytdlp(&installer).await?;
+        install_ytdlp(&installer)
+            .await
+            .context("Failed to ensure sandboxed yt-dlp is installed")?;
     }
 
     if !ffmpeg_path(cfg).exists() {
-        install_ffmpeg(&installer).await?;
+        install_ffmpeg(&installer)
+            .await
+            .context("Failed to ensure sandboxed ffmpeg is installed")?;
     }
 
     Ok(())
@@ -50,7 +54,9 @@ pub async fn update_binaries(cfg: &Config) -> Result<()> {
     let installer = LibraryInstaller::new(dir);
 
     if !ytdlp_path(cfg).exists() {
-        install_ytdlp(&installer).await?;
+        install_ytdlp(&installer)
+            .await
+            .context("Failed to ensure sandboxed yt-dlp is installed before update")?;
     }
 
     let pb = tui::spinner("Updating vdl dependencies...");
@@ -67,7 +73,9 @@ pub async fn update_binaries(cfg: &Config) -> Result<()> {
     }
 
     if !ffmpeg_path(cfg).exists() {
-        install_ffmpeg(&installer).await?;
+        install_ffmpeg(&installer)
+            .await
+            .context("Failed to ensure sandboxed ffmpeg is installed after update")?;
     }
 
     Ok(())

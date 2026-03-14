@@ -32,13 +32,13 @@ pub struct PlatformQuality {
 
 impl Config {
     pub fn load() -> Result<Config> {
-        let path = config_path()?;
-        load_from_path(&path)
+        let path = config_path().context("Failed to resolve vdl config path")?;
+        load_from_path(&path).context("Failed to load vdl config")
     }
 
     pub fn ensure_exists() -> Result<bool> {
-        let path = config_path()?;
-        ensure_exists_at(&path)
+        let path = config_path().context("Failed to resolve vdl config path")?;
+        ensure_exists_at(&path).context("Failed to ensure vdl config exists")
     }
 
     pub fn download_path_expanded(&self) -> PathBuf {
@@ -51,7 +51,7 @@ impl Config {
 }
 
 pub fn config_dir() -> Result<PathBuf> {
-    let home = require_home_dir()?;
+    let home = require_home_dir().context("Failed to resolve vdl config directory")?;
     Ok(config_dir_from_home(&home))
 }
 

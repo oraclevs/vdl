@@ -193,7 +193,7 @@ pub(crate) async fn run_spotify(args: SpotifyArgs) -> Result<()> {
 
 pub(crate) fn load_config_or_create() -> Result<Option<Config>> {
     if Config::ensure_exists()? {
-        let path = config::config_path()?;
+        let path = config::config_path().context("Failed to resolve vdl config path")?;
         tui::print_first_run(&display_path(&path));
         return Ok(None);
     }

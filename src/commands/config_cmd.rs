@@ -7,7 +7,7 @@ use crate::{config, tui};
 use super::display_path;
 
 pub async fn run() -> Result<()> {
-    let path = config::config_path()?;
+    let path = config::config_path().context("Failed to resolve vdl config path")?;
     let display_path = display_path(&path);
 
     tui::print_header("Config", "Showing");
