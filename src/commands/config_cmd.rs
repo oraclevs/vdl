@@ -1,1 +1,5 @@
-// Config command handler is added in a later layer.
+use anyhow::{bail, Result};
+
+pub async fn run() -> Result<()> {
+    bail!("Config command is not implemented yet.")
+}

@@ -5,8 +5,39 @@ mod downloader;
 mod sandbox;
 mod tui;
 
-use clap::Parser;
+use std::io::Write;
 
-fn main() {
-    let _ = cli::Cli::parse();
+use anyhow::Result;
+use clap::{CommandFactory, Parser};
+use colored::Colorize;
+
+#[tokio::main]
+async fn main() {
+    if let Err(e) = run().await {
+        eprintln!("{} {}", "Error:".red().bold(), e);
+        for cause in e.chain().skip(1) {
+            eprintln!("  {}", cause);
+        }
+        std::process::exit(1);
+    }
+}
+
+async fn run() -> Result<()> {
+    let cli = cli::Cli::parse();
+
+    match cli.command {
+        Some(cli::Commands::Yt(args)) => commands::yt::run(args).await,
+        Some(cli::Commands::Tk(args)) => commands::tk::run(args).await,
+        Some(cli::Commands::Ig(args)) => commands::ig::run(args).await,
+        Some(cli::Commands::Tw(args)) => commands::tw::run(args).await,
+        Some(cli::Commands::Sp(args)) => commands::sp::run(args).await,
+        Some(cli::Commands::Update) => commands::update::run().await,
+        Some(cli::Commands::Config) => commands::config_cmd::run().await,
+        None => {
+            let mut command = cli::Cli::command();
+            command.print_help()?;
+            std::io::stdout().write_all(b"\n")?;
+            Ok(())
+        }
+    }
 }

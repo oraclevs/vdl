@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use colored::Colorize;
 use console::Term;
-use dialoguer::{Confirm, Select};
+use dialoguer::{Confirm, Input, Select};
 use indicatif::{ProgressBar, ProgressStyle};
 use yt_dlp::model::Video;
 
@@ -61,24 +61,55 @@ pub fn update_download_bar(pb: &ProgressBar, downloaded: u64, total: u64) {
     pb.set_position(downloaded);
 }
 
-pub fn print_metadata(video: &Video) {
-    let entries = metadata_entries(video);
-    let value_width = entries
-        .iter()
-        .map(|(_, value)| value.chars().count())
-        .max()
-        .unwrap_or(0);
-    let inner_width = LABEL_WIDTH + value_width + 5;
-    let border = "─".repeat(inner_width);
-    let mut stdout = io::stdout().lock();
+pub fn progress_bar(filename: &str) -> ProgressBar {
+    let pb = ProgressBar::new(1000);
+    let style =
+        ProgressStyle::with_template("{spinner:.cyan} {msg} [{bar:40.green/white}] {percent:>3}%")
+            .map(|style| style.tick_strings(&SPINNER_TICKS).progress_chars("█▓░"))
+            .unwrap_or_else(|_| ProgressStyle::default_bar());
 
-    let _ = writeln!(stdout, "┌{border}┐");
-    for (label, value) in entries {
-        let label = format!("{label:<LABEL_WIDTH$}");
-        let value = format!("{value:<value_width$}");
-        let _ = writeln!(stdout, "│  {}: {} │", label.cyan().bold(), value.white());
-    }
-    let _ = writeln!(stdout, "└{border}┘");
+    pb.set_style(style);
+    pb.set_length(1000);
+    pb.set_position(0);
+    pb.set_message(filename.to_string());
+    pb.enable_steady_tick(Duration::from_millis(80));
+    pb
+}
+
+pub fn update_progress_bar(pb: &ProgressBar, fraction: f64) {
+    let clamped = fraction.clamp(0.0, 1.0);
+    pb.set_position((clamped * 1000.0).round() as u64);
+}
+
+pub fn clear_progress(pb: &ProgressBar) {
+    pb.finish_and_clear();
+}
+
+pub fn print_metadata(video: &Video) {
+    print_metadata_block(&metadata_entries(video));
+}
+
+pub fn print_spotify_metadata(video: &Video) {
+    let entries = vec![
+        ("Title", video.title.clone()),
+        (
+            "Artist",
+            video
+                .uploader
+                .clone()
+                .unwrap_or_else(|| "Unknown".to_string()),
+        ),
+        ("Duration", format_duration(video.duration)),
+        (
+            "URL",
+            video
+                .webpage_url
+                .clone()
+                .unwrap_or_else(|| "Unknown".to_string()),
+        ),
+    ];
+
+    print_metadata_block(&entries);
 }
 
 pub fn confirm_download(video_title: &str) -> Result<bool> {
@@ -92,6 +123,34 @@ pub fn select_search_result(results: &[SearchResult]) -> Result<Option<usize>> {
 pub fn print_header(platform: &str, action: &str) {
     let mut stdout = io::stdout().lock();
     let _ = writeln!(stdout, "{}", header_line(platform, action).cyan());
+}
+
+pub fn print_info(msg: &str) {
+    let mut stdout = io::stdout().lock();
+    let _ = writeln!(stdout, "{msg}");
+}
+
+pub fn print_success(msg: &str) {
+    let mut stdout = io::stdout().lock();
+    let _ = writeln!(stdout, "{} {}", "✓".green(), msg.green());
+}
+
+pub fn print_warning(msg: &str) {
+    let mut stdout = io::stdout().lock();
+    let _ = writeln!(stdout, "{}", msg.yellow());
+}
+
+pub fn print_first_run(config_path: &str) {
+    print_warning("  Welcome to vdl! No config found.");
+    print_info(&format!("  Config created at: {config_path}"));
+    print_info("  Please edit it to set your download path, then run vdl again.");
+}
+
+pub fn prompt_input(prompt: &str) -> Result<String> {
+    Input::<String>::new()
+        .with_prompt(prompt)
+        .interact_text()
+        .context("Failed to read input")
 }
 
 fn confirm_download_on(video_title: &str, term: &Term) -> Result<bool> {
@@ -143,6 +202,25 @@ fn metadata_entries(video: &Video) -> Vec<(&'static str, String)> {
                 .unwrap_or_else(|| "Unknown".to_string()),
         ),
     ]
+}
+
+fn print_metadata_block(entries: &[(&'static str, String)]) {
+    let value_width = entries
+        .iter()
+        .map(|(_, value)| value.chars().count())
+        .max()
+        .unwrap_or(0);
+    let inner_width = LABEL_WIDTH + value_width + 5;
+    let border = "─".repeat(inner_width);
+    let mut stdout = io::stdout().lock();
+
+    let _ = writeln!(stdout, "┌{border}┐");
+    for (label, value) in entries {
+        let label = format!("{label:<LABEL_WIDTH$}");
+        let value = format!("{value:<value_width$}");
+        let _ = writeln!(stdout, "│  {}: {} │", label.cyan().bold(), value.white());
+    }
+    let _ = writeln!(stdout, "└{border}┘");
 }
 
 fn search_result_items(results: &[SearchResult]) -> Vec<String> {
@@ -266,6 +344,16 @@ mod tests {
         assert_eq!(pb.message(), "demo.mp4");
         assert_eq!(pb.position(), 256);
         assert_eq!(pb.length(), Some(2048));
+    }
+
+    #[test]
+    fn progress_bar_tracks_fractional_progress() {
+        let pb = progress_bar("demo.mp4");
+        update_progress_bar(&pb, 0.375);
+
+        assert_eq!(pb.message(), "demo.mp4");
+        assert_eq!(pb.length(), Some(1000));
+        assert_eq!(pb.position(), 375);
     }
 
     #[test]
