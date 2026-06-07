@@ -1,6 +1,7 @@
 mod download;
 mod routes;
 mod state;
+mod ws;
 
 use std::sync::Arc;
 
@@ -16,5 +17,6 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         .route("/api/download", post(routes::start_download))
         .route("/api/download/{session_id}", delete(routes::cancel_download))
         .route("/api/downloads", get(routes::list_downloads))
+        .route("/ws", get(ws::ws_handler))
         .with_state(state)
 }
