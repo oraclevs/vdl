@@ -31,25 +31,31 @@ use crate::cli::{CommonArgs, SpotifyArgs};
 use crate::config::{self, Config};
 use crate::{downloader, sandbox, tui};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum Platform {
+    #[serde(rename = "yt")]
     YouTube,
+    #[serde(rename = "tk")]
     TikTok,
+    #[serde(rename = "ig")]
     Instagram,
+    #[serde(rename = "tw")]
     Twitter,
+    #[serde(rename = "sp")]
     Spotify,
 }
 
 #[derive(Debug, Clone)]
-struct CommonRequest {
-    url: Option<String>,
-    search: Option<String>,
-    quality: String,
-    format: String,
-    output_dir: PathBuf,
-    audio_only: bool,
-    video_only: bool,
-    yes: bool,
+pub(crate) struct CommonRequest {
+    pub(crate) url: Option<String>,
+    pub(crate) search: Option<String>,
+    pub(crate) quality: String,
+    pub(crate) format: String,
+    pub(crate) output_dir: PathBuf,
+    pub(crate) audio_only: bool,
+    pub(crate) video_only: bool,
+    pub(crate) yes: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -85,7 +91,7 @@ impl Platform {
         matches!(self, Platform::YouTube)
     }
 
-    fn auth_hint(self) -> Option<&'static str> {
+    pub(crate) fn auth_hint(self) -> Option<&'static str> {
         match self {
             Platform::YouTube => Some(
                 "Tip: Some YouTube videos require authentication. Set cookies_from_browser or cookies_file in ~/.config/vdl/config.yaml and run `vdl update` if extractor support is outdated.",
@@ -377,7 +383,7 @@ pub(crate) fn load_config_or_create() -> Result<Option<Config>> {
     Ok(Some(Config::load()?))
 }
 
-fn normalize_common_args(
+pub(crate) fn normalize_common_args(
     platform: Platform,
     args: CommonArgs,
     cfg: &Config,
@@ -505,7 +511,7 @@ async fn search_for_url(
     )))
 }
 
-async fn fetch_video(downloader: &Downloader, cfg: &Config, url: &str) -> Result<Video> {
+pub(crate) async fn fetch_video(downloader: &Downloader, cfg: &Config, url: &str) -> Result<Video> {
     let spinner = tui::spinner("2/4 Fetching video metadata...", cfg.no_progress);
     let video = match downloader.fetch_video_infos(url).await {
         Ok(video) => video,
@@ -655,7 +661,7 @@ async fn execute_common_download(
     }
 }
 
-async fn execute_full_download(
+pub(crate) async fn execute_full_download(
     cfg: &Config,
     downloader: &Downloader,
     video: &yt_dlp::model::Video,
@@ -684,7 +690,7 @@ async fn execute_full_download(
     }
 }
 
-async fn execute_audio_download(
+pub(crate) async fn execute_audio_download(
     downloader: &Downloader,
     video: &yt_dlp::model::Video,
     output_path: &Path,
@@ -703,7 +709,7 @@ async fn execute_audio_download(
         .context("Failed to download audio stream")
 }
 
-async fn execute_video_only_download(
+pub(crate) async fn execute_video_only_download(
     downloader: &Downloader,
     video: &yt_dlp::model::Video,
     output_path: &Path,
@@ -826,7 +832,7 @@ fn resolve_output_dir(override_dir: Option<PathBuf>, fallback: PathBuf) -> Resul
     }
 }
 
-async fn prepare_download_environment(cfg: &Config, output_dir: &Path) -> Result<Downloader> {
+pub(crate) async fn prepare_download_environment(cfg: &Config, output_dir: &Path) -> Result<Downloader> {
     let spinner = tui::spinner("1/4 Preparing download environment...", cfg.no_progress);
     let result = async {
         sandbox::ensure_installed(cfg).await?;
@@ -894,7 +900,7 @@ async fn cleanup_managed_temp_files(dir: &Path) -> Result<usize> {
     Ok(removed)
 }
 
-async fn cleanup_download_artifacts(dir: &Path, no_progress: bool) -> Result<usize> {
+pub(crate) async fn cleanup_download_artifacts(dir: &Path, no_progress: bool) -> Result<usize> {
     let spinner = tui::spinner("4/4 Cleaning temporary files...", no_progress);
     let result = cleanup_managed_temp_files(dir).await;
 
@@ -993,7 +999,7 @@ fn map_quality(value: &str) -> VideoQuality {
     }
 }
 
-fn sanitise_filename(title: &str) -> String {
+pub(crate) fn sanitise_filename(title: &str) -> String {
     let mut sanitized = String::new();
     let mut last_was_separator = false;
 
@@ -1027,7 +1033,7 @@ fn sanitise_filename(title: &str) -> String {
     }
 }
 
-fn format_size(bytes: u64) -> String {
+pub(crate) fn format_size(bytes: u64) -> String {
     let units = ["B", "KB", "MB", "GB", "TB"];
     let mut size = bytes as f64;
     let mut index = 0usize;
