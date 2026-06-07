@@ -32,10 +32,16 @@ const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(200);
 pub(crate) fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", get(placeholder))
-        .route("/api/config", get(routes::get_config).put(routes::put_config))
+        .route(
+            "/api/config",
+            get(routes::get_config).put(routes::put_config),
+        )
         .route("/api/fetch-metadata", post(routes::fetch_metadata))
         .route("/api/download", post(routes::start_download))
-        .route("/api/download/{session_id}", delete(routes::cancel_download))
+        .route(
+            "/api/download/{session_id}",
+            delete(routes::cancel_download),
+        )
         .route("/api/downloads", get(routes::list_downloads))
         .route("/ws", get(ws::ws_handler))
         .layer(CorsLayer::permissive())
@@ -63,10 +69,9 @@ pub(crate) async fn start(args: ServeArgs, config: Config) -> Result<()> {
 
     if !is_loopback(&args.host) {
         println!(
-            "{} {}",
-            "Warning:".yellow().bold(),
-            "binding to a non-loopback address with no authentication — \
-             anyone on your network will be able to reach this server."
+            "{} binding to a non-loopback address with no authentication — \
+             anyone on your network will be able to reach this server.",
+            "Warning:".yellow().bold()
         );
     }
 
@@ -95,7 +100,9 @@ fn open_in_browser(url: &str) {
     #[cfg(target_os = "macos")]
     let result = std::process::Command::new("open").arg(url).spawn();
     #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("cmd").args(["/C", "start", url]).spawn();
+    let result = std::process::Command::new("cmd")
+        .args(["/C", "start", url])
+        .spawn();
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let result = std::process::Command::new("xdg-open").arg(url).spawn();
 
@@ -111,9 +118,8 @@ fn open_in_browser(url: &str) {
 async fn shutdown_signal(state: Arc<AppState>) {
     let _ = tokio::signal::ctrl_c().await;
     println!(
-        "\n{} {}",
-        "Shutting down —".yellow().bold(),
-        "cancelling active downloads..."
+        "\n{} cancelling active downloads...",
+        "Shutting down —".yellow().bold()
     );
 
     for entry in state.sessions.iter() {

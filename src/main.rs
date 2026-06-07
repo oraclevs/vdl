@@ -43,6 +43,13 @@ async fn run() -> Result<()> {
 
     let cli = cli::Cli::parse();
 
+    if cli.serve {
+        let Some(cfg) = commands::load_config_or_create()? else {
+            return Ok(());
+        };
+        return server::start(cli.serve_args, cfg).await;
+    }
+
     match cli.command {
         Some(cli::Commands::Yt(args)) => commands::yt::run(args).await,
         Some(cli::Commands::Tk(args)) => commands::tk::run(args).await,

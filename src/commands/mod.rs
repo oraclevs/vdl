@@ -832,7 +832,10 @@ fn resolve_output_dir(override_dir: Option<PathBuf>, fallback: PathBuf) -> Resul
     }
 }
 
-pub(crate) async fn prepare_download_environment(cfg: &Config, output_dir: &Path) -> Result<Downloader> {
+pub(crate) async fn prepare_download_environment(
+    cfg: &Config,
+    output_dir: &Path,
+) -> Result<Downloader> {
     let spinner = tui::spinner("1/4 Preparing download environment...", cfg.no_progress);
     let result = async {
         sandbox::ensure_installed(cfg).await?;

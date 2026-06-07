@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -52,8 +51,8 @@ pub(crate) enum SessionStatus {
     FetchingMetadata,
     Downloading,
     Merging,
-    Complete { output_path: PathBuf },
-    Error(String),
+    Complete,
+    Error,
     Cancelled,
 }
 
@@ -65,8 +64,8 @@ impl SessionStatus {
             SessionStatus::FetchingMetadata => "fetching_metadata",
             SessionStatus::Downloading => "downloading",
             SessionStatus::Merging => "merging",
-            SessionStatus::Complete { .. } => "complete",
-            SessionStatus::Error(_) => "error",
+            SessionStatus::Complete => "complete",
+            SessionStatus::Error => "error",
             SessionStatus::Cancelled => "cancelled",
         }
     }
@@ -74,7 +73,7 @@ impl SessionStatus {
     pub(crate) fn is_finished(&self) -> bool {
         matches!(
             self,
-            SessionStatus::Complete { .. } | SessionStatus::Error(_) | SessionStatus::Cancelled
+            SessionStatus::Complete | SessionStatus::Error | SessionStatus::Cancelled
         )
     }
 }
@@ -171,13 +170,7 @@ mod tests {
         let base = Instant::now();
 
         for offset in 0..60u64 {
-            let session = session_at(
-                SessionStatus::Complete {
-                    output_path: PathBuf::from("/tmp/out.mp4"),
-                },
-                offset,
-                base,
-            );
+            let session = session_at(SessionStatus::Complete, offset, base);
             sessions.insert(session.id, session);
         }
 

@@ -7,7 +7,7 @@ use axum::response::IntoResponse;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use super::state::{AppState, ServerEvent};
+use super::state::AppState;
 
 /// "Client → Server" WebSocket message shapes, tagged by `"type"`.
 #[derive(Debug, Deserialize)]
@@ -88,6 +88,7 @@ mod tests {
     use super::*;
     use crate::config::{Config, PlatformQuality};
     use crate::server::router;
+    use crate::server::state::ServerEvent;
 
     type WsStream = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -122,7 +123,9 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("listener should bind to an ephemeral port");
-        let addr = listener.local_addr().expect("listener should expose its address");
+        let addr = listener
+            .local_addr()
+            .expect("listener should expose its address");
 
         tokio::spawn(async move {
             axum::serve(listener, app)
@@ -155,7 +158,9 @@ mod tests {
             .expect("websocket handshake should succeed");
 
         socket
-            .send(WsMessage::Text(json!({ "type": "ping" }).to_string().into()))
+            .send(WsMessage::Text(
+                json!({ "type": "ping" }).to_string().into(),
+            ))
             .await
             .expect("ping should send");
 
@@ -175,7 +180,9 @@ mod tests {
 
         socket
             .send(WsMessage::Text(
-                json!({ "type": "subscribe", "session_id": watched }).to_string().into(),
+                json!({ "type": "subscribe", "session_id": watched })
+                    .to_string()
+                    .into(),
             ))
             .await
             .expect("subscribe should send");

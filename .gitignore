@@ -1,1 +1,8 @@
 /target
+.gitignore
+.claude/
+.agents/
+.docs/
+docs/
+CLAUDE.md
+

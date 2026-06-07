@@ -306,7 +306,10 @@ mod tests {
             "output_dir": null
         });
         let merged = base.as_object_mut().expect("base should be an object");
-        for (key, value) in overrides.as_object().expect("overrides should be an object") {
+        for (key, value) in overrides
+            .as_object()
+            .expect("overrides should be an object")
+        {
             merged.insert(key.clone(), value.clone());
         }
         base
@@ -316,7 +319,10 @@ mod tests {
     async fn get_config_returns_current_config() {
         let app = router(test_state());
 
-        let response = app.oneshot(empty_request("GET", "/api/config")).await.expect("request should succeed");
+        let response = app
+            .oneshot(empty_request("GET", "/api/config"))
+            .await
+            .expect("request should succeed");
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = body_json(response).await;
@@ -494,7 +500,10 @@ mod tests {
         let app = router(Arc::clone(&state));
 
         let response = app
-            .oneshot(empty_request("DELETE", &format!("/api/download/{session_id}")))
+            .oneshot(empty_request(
+                "DELETE",
+                &format!("/api/download/{session_id}"),
+            ))
             .await
             .expect("request should succeed");
 

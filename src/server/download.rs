@@ -52,9 +52,7 @@ pub(crate) async fn run(session_id: Uuid, request: DownloadRequest, state: Arc<A
         Ok(output_path) => finish(
             &state,
             session_id,
-            SessionStatus::Complete {
-                output_path: output_path.clone(),
-            },
+            SessionStatus::Complete,
             ServerEvent::Complete {
                 session_id,
                 output_path: output_path.display().to_string(),
@@ -72,8 +70,11 @@ pub(crate) async fn run(session_id: Uuid, request: DownloadRequest, state: Arc<A
         Err(DriveError::Failed(message)) => finish(
             &state,
             session_id,
-            SessionStatus::Error(message.clone()),
-            ServerEvent::Error { session_id, message },
+            SessionStatus::Error,
+            ServerEvent::Error {
+                session_id,
+                message,
+            },
         ),
     }
 }
@@ -127,7 +128,11 @@ async fn drive(
         state,
         session_id,
         SessionStatus::FetchingMetadata,
-        Some(status_event(session_id, &SessionStatus::FetchingMetadata, None)),
+        Some(status_event(
+            session_id,
+            &SessionStatus::FetchingMetadata,
+            None,
+        )),
     );
 
     let video = fetch_video(&downloader, &cfg, &url).await.map_err(|err| {
@@ -208,7 +213,16 @@ async fn execute_download(
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| "download".to_string());
-        execute_full_download(cfg, downloader, video, output_path, &filename, request, progress).await
+        execute_full_download(
+            cfg,
+            downloader,
+            video,
+            output_path,
+            &filename,
+            request,
+            progress,
+        )
+        .await
     }
 }
 
@@ -317,7 +331,9 @@ mod tests {
         let event = status_event(session_id, &SessionStatus::Merging, None);
 
         match event {
-            ServerEvent::Status { status, message, .. } => {
+            ServerEvent::Status {
+                status, message, ..
+            } => {
                 assert_eq!(status, "merging");
                 assert_eq!(message, None);
             }
