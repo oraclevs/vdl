@@ -37,8 +37,18 @@
 ## Installation
 
 ```bash
-cargo install vdl
+cargo install vdl --locked
 ```
+
+The `--locked` flag matters right now: one of `vdl`'s transitive
+dependencies (`yt-dlp` → `lofty`) is pinned to a `lofty` release range
+that crates.io has yanked entirely, so a fresh dependency resolution
+fails. `--locked` tells Cargo to reuse the known-good versions recorded
+in `vdl`'s own `Cargo.lock` (yanked crates remain downloadable for
+lockfiles that already reference them — they just can't be freshly
+chosen by the resolver). Plain `cargo install vdl` will fail with a
+"version is yanked" error from `lofty` until upstream `yt-dlp` relaxes
+that dependency.
 
 That's it. On first run, `vdl` creates a config file at
 `~/.config/vdl/config.yaml`. The first download or update command then
