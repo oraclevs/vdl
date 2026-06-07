@@ -37,9 +37,19 @@ dialoguer     = "0.11"
 colored       = "2"
 dirs          = "5"
 tokio-stream  = "0.1"
+axum          = { version = "0.8", features = ["ws"] }
+tower-http    = { version = "0.6", features = ["cors"] }
+dashmap       = "6"
+tokio-util    = "0.7"
+uuid          = { version = "1", features = ["v4"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 # reqwest 0.13 routes its rustls backend through rustls-platform-verifier on Android,
 # which panics in Termux because there is no hosted JVM to initialize the verifier.
 # Enabling native-tls for Android forces reqwest's default backend away from that path.
 reqwest       = { version = "0.13.2", default-features = false, features = ["native-tls", "json", "stream"] }
+
+[dev-dependencies]
+tower            = { version = "0.5", features = ["util"] }
+tokio-tungstenite = "0.29"
+futures-util     = "0.3"
