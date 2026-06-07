@@ -1,0 +1,85 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,500&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --color-paper: #faf5ee;
+  --color-paper-deep: #f1e9dc;
+  --color-ink: #221d18;
+  --color-ink-soft: #6b6259;
+  --color-ink-faint: #a89e92;
+  --color-line: #e6dccb;
+  --color-card: #fffdfa;
+  --color-coral: #e8602f;
+  --color-coral-soft: #fce3d6;
+  --color-teal: #1f6f63;
+  --color-teal-soft: #dcefe9;
+  --color-plum: #6c4f8c;
+  --color-plum-soft: #ece3f3;
+  --color-rose: #c8505b;
+  --color-rose-soft: #f8dde0;
+
+  --font-display: 'Instrument Serif', Georgia, serif;
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    margin: 0;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer utilities {
+  .bg-grain {
+    background-image:
+      radial-gradient(circle at 20% 20%, rgba(232, 96, 47, 0.07), transparent 38%),
+      radial-gradient(circle at 85% 0%, rgba(31, 111, 99, 0.06), transparent 42%),
+      radial-gradient(circle at 50% 100%, rgba(108, 79, 140, 0.05), transparent 45%);
+  }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.animate-rise {
+  animation: rise 0.4s cubic-bezier(0.22, 0.9, 0.27, 1) both;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.animate-blink {
+  animation: blink 1.2s ease-in-out infinite;
+}
+
+@keyframes loading-sweep {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(330%); }
+}
+.animate-loading-sweep {
+  animation: loading-sweep 1.4s ease-in-out infinite;
+}
+
+/* Custom range/checkbox-free toggle look is handled with Tailwind classes directly. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

@@ -309,6 +309,9 @@ fn set_progress(state: &AppState, session_id: Uuid, percent: f32) {
 fn finish(state: &AppState, session_id: Uuid, status: SessionStatus, event: ServerEvent) {
     if let Some(mut session) = state.sessions.get_mut(&session_id) {
         session.status = status;
+        if let ServerEvent::Error { message, .. } = &event {
+            session.error_message = Some(message.clone());
+        }
     }
     broadcast(state, event);
     evict_finished_sessions(&state.sessions);

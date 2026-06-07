@@ -40,6 +40,10 @@ pub(crate) struct DownloadSession {
     pub(crate) url: String,
     pub(crate) status: SessionStatus,
     pub(crate) progress: f32,
+    /// Set when `status` lands on `Error`/`Cancelled`, so `GET /api/downloads`
+    /// can explain *why* a session failed even to clients that missed the
+    /// transient WS `ServerEvent::Error` broadcast.
+    pub(crate) error_message: Option<String>,
     pub(crate) abort: CancellationToken,
     pub(crate) created_at: Instant,
 }
@@ -159,6 +163,7 @@ mod tests {
             url: "https://example.com/watch?v=test".to_string(),
             status,
             progress: 0.0,
+            error_message: None,
             abort: CancellationToken::new(),
             created_at: base + Duration::from_secs(offset_secs),
         }

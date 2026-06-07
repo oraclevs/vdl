@@ -167,6 +167,7 @@ pub(crate) async fn start_download(
             url,
             status: SessionStatus::Pending,
             progress: 0.0,
+            error_message: None,
             abort: CancellationToken::new(),
             created_at: Instant::now(),
         },
@@ -201,6 +202,8 @@ pub(crate) struct SessionSummary {
     platform: Platform,
     status: String,
     progress: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error_message: Option<String>,
 }
 
 pub(crate) async fn list_downloads(
@@ -219,6 +222,7 @@ pub(crate) async fn list_downloads(
                     platform: session.platform,
                     status: session.status.as_str().to_string(),
                     progress: session.progress,
+                    error_message: session.error_message.clone(),
                 },
             )
         })
@@ -493,6 +497,7 @@ mod tests {
                 url: "https://example.com/watch?v=test".to_string(),
                 status: SessionStatus::Downloading,
                 progress: 12.0,
+                error_message: None,
                 abort: abort.clone(),
                 created_at: Instant::now(),
             },

@@ -1,4 +1,6 @@
 /target
+/web/node_modules
+/web/dist
 .gitignore
 .claude/
 .agents/
