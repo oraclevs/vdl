@@ -12,9 +12,31 @@ use clap::{builder::PossibleValuesParser, Args, Parser, Subcommand};
 #[derive(Debug, Parser)]
 #[command(name = "vdl", about = "Video Downloader CLI")]
 pub struct Cli {
+    /// Starts the local web UI server instead of running a CLI subcommand.
+    #[arg(short = 'S', long)]
+    pub serve: bool,
+
+    /// Configures the local web UI server when `--serve` is passed.
+    #[command(flatten)]
+    pub serve_args: ServeArgs,
+
     /// Selects which platform command or utility action should run.
     #[command(subcommand)]
     pub command: Option<Commands>,
+}
+
+/// Captures the flags accepted by `vdl --serve`.
+#[derive(Debug, Clone, Args)]
+pub struct ServeArgs {
+    /// Sets the address the server binds to.
+    #[arg(long, default_value = "127.0.0.1")]
+    pub host: String,
+    /// Sets the port the server listens on.
+    #[arg(long, short = 'p', default_value_t = 7272)]
+    pub port: u16,
+    /// Opens the default browser at the server URL once it starts.
+    #[arg(long, short = 'o')]
+    pub open: bool,
 }
 
 /// Lists all supported platform and utility subcommands.
@@ -202,5 +224,28 @@ mod tests {
             .expect_err("spotify should reject unsupported flags");
 
         assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn serve_flag_parses_with_custom_port_and_host() {
+        let cli = Cli::try_parse_from([
+            "vdl", "--serve", "--host", "0.0.0.0", "--port", "9090", "--open",
+        ])
+        .expect("serve flags should parse");
+
+        assert!(cli.serve);
+        assert_eq!(cli.serve_args.host, "0.0.0.0");
+        assert_eq!(cli.serve_args.port, 9090);
+        assert!(cli.serve_args.open);
+    }
+
+    #[test]
+    fn serve_flag_defaults_to_loopback_and_default_port() {
+        let cli = Cli::try_parse_from(["vdl", "-S"]).expect("-S should parse");
+
+        assert!(cli.serve);
+        assert_eq!(cli.serve_args.host, "127.0.0.1");
+        assert_eq!(cli.serve_args.port, 7272);
+        assert!(!cli.serve_args.open);
     }
 }
