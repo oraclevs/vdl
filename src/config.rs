@@ -122,6 +122,17 @@ impl Config {
             .filter(|value| !value.is_empty())
             .map(expand_tilde)
     }
+
+    /// Persists this configuration to the standard user config path as YAML.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the config path cannot be resolved, the config cannot be
+    /// serialised to YAML, or the file cannot be written.
+    pub fn save(&self) -> Result<()> {
+        let path = config_path().context("Failed to resolve vdl config path")?;
+        save_to_path(self, &path)
+    }
 }
 
 /// Resolves the directory that contains `vdl` configuration files.
@@ -181,6 +192,21 @@ fn load_from_path(path: &Path) -> Result<Config> {
 
     apply_runtime_overrides(&mut cfg, sandbox::is_termux());
     Ok(cfg)
+}
+
+fn save_to_path(cfg: &Config, path: &Path) -> Result<()> {
+    let yaml = serde_yaml::to_string(cfg).context("Failed to serialise config to YAML")?;
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!("Failed to create config directory at {}", parent.display())
+        })?;
+    }
+
+    fs::write(path, yaml)
+        .with_context(|| format!("Failed to write config file to {}", path.display()))?;
+
+    Ok(())
 }
 
 fn apply_runtime_overrides(cfg: &mut Config, termux_detected: bool) {
@@ -298,6 +324,29 @@ mod tests {
         assert_eq!(cfg.cookies_file_expanded(), None);
         assert!(!cfg.termux_mode);
         assert!(!cfg.no_progress);
+
+        fs::remove_dir_all(
+            path.parent()
+                .and_then(Path::parent)
+                .expect("test dir should exist"),
+        )
+        .expect("test dir cleanup should succeed");
+    }
+
+    #[test]
+    fn save_to_path_round_trips_through_load() {
+        let path = unique_config_path("save");
+
+        let mut cfg: Config =
+            serde_yaml::from_str(EXAMPLE_CONFIG).expect("example config should parse");
+        cfg.default_video_quality = "720".to_string();
+        cfg.search_results_count = 5;
+
+        save_to_path(&cfg, &path).expect("config should save");
+        let reloaded = load_from_path(&path).expect("saved config should reload");
+
+        assert_eq!(reloaded.default_video_quality, "720");
+        assert_eq!(reloaded.search_results_count, 5);
 
         fs::remove_dir_all(
             path.parent()
