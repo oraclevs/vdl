@@ -16,6 +16,7 @@ mod commands;
 mod config;
 mod downloader;
 mod sandbox;
+mod server;
 mod tui;
 
 use std::io::Write;

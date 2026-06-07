@@ -41,7 +41,7 @@ axum          = { version = "0.8", features = ["ws"] }
 tower-http    = { version = "0.6", features = ["cors"] }
 dashmap       = "6"
 tokio-util    = "0.7"
-uuid          = { version = "1", features = ["v4"] }
+uuid          = { version = "1", features = ["v4", "serde"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 # reqwest 0.13 routes its rustls backend through rustls-platform-verifier on Android,
