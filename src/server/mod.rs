@@ -22,7 +22,7 @@ use crate::tui;
 
 use state::AppState;
 
-const PLACEHOLDER_HTML: &str = include_str!("placeholder.html");
+const UI_HTML: &str = include_str!("ui.html");
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
@@ -31,7 +31,7 @@ const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(200);
 /// be tightened once the real frontend is embedded same-origin in Phase 2.
 pub(crate) fn router(state: Arc<AppState>) -> Router {
     Router::new()
-        .route("/", get(placeholder))
+        .route("/", get(ui))
         .route(
             "/api/config",
             get(routes::get_config).put(routes::put_config),
@@ -48,8 +48,8 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
-async fn placeholder() -> Html<&'static str> {
-    Html(PLACEHOLDER_HTML)
+async fn ui() -> Html<&'static str> {
+    Html(UI_HTML)
 }
 
 /// Starts the server: ensures sandboxed binaries exist (same check the CLI path
