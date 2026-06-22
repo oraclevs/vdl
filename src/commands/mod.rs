@@ -511,27 +511,53 @@ async fn search_for_url(
     )))
 }
 
+/// Number of metadata-fetch attempts before giving up. Some extractors (notably TikTok)
+/// intermittently fail to parse the page they just fetched — a transient anti-bot
+/// challenge rather than a real extraction bug — and a short retry clears it most of
+/// the time without the user having to re-run the command by hand.
+const METADATA_FETCH_ATTEMPTS: u32 = 5;
+const METADATA_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(2);
+const BINARY_DOWNLOAD_ATTEMPTS: u32 = 5;
+
 pub(crate) async fn fetch_video(downloader: &Downloader, cfg: &Config, url: &str) -> Result<Video> {
     let spinner = tui::spinner("2/4 Fetching video metadata...", cfg.no_progress);
-    let video = match downloader.fetch_video_infos(url).await {
-        Ok(video) => video,
-        // yt-dlp 2.6.0's Video model requires fields that some extractors (notably TikTok)
-        // return as missing or null. Fall back to raw `yt-dlp -J` output and normalize them.
-        Err(YtDlpError::Json { .. }) => fetch_video_via_raw_json(cfg, url)
-            .await
-            .with_context(|| format!("Failed to fetch video info for {url}"))?,
-        Err(err) => {
-            return Err(err).with_context(|| format!("Failed to fetch video info for {url}"))
-        }
-    };
 
-    tui::spinner_ok(&spinner, "2/4 Video metadata ready");
-    Ok(video)
+    let mut last_err = None;
+    for attempt in 1..=METADATA_FETCH_ATTEMPTS {
+        let result = match downloader.fetch_video_infos(url).await {
+            Ok(video) => Ok(video),
+            // yt-dlp 2.6.0's Video model requires fields that some extractors (notably
+            // TikTok) return as missing or null. Fall back to raw `yt-dlp -J` output and
+            // normalize them.
+            Err(YtDlpError::Json { .. }) => fetch_video_via_raw_json(cfg, url).await,
+            Err(err) => Err(err.into()),
+        };
+
+        match result {
+            Ok(video) => {
+                tui::spinner_ok(&spinner, "2/4 Video metadata ready");
+                return Ok(video);
+            }
+            Err(err) if attempt < METADATA_FETCH_ATTEMPTS => {
+                last_err = Some(err);
+                tokio::time::sleep(METADATA_RETRY_DELAY).await;
+            }
+            Err(err) => {
+                tui::spinner_err(&spinner, "2/4 Failed to fetch video metadata");
+                last_err = Some(err);
+                break;
+            }
+        }
+    }
+
+    Err(last_err.expect("loop always assigns an error before exiting without returning"))
+        .with_context(|| format!("Failed to fetch video info for {url}"))
 }
 
 async fn fetch_video_via_raw_json(cfg: &Config, url: &str) -> Result<Video> {
     let output = tokio::process::Command::new(sandbox::ytdlp_path(cfg))
         .arg("-J")
+        .args(downloader::cookie_args(cfg)?)
         .arg(url)
         .output()
         .await
@@ -748,18 +774,35 @@ async fn execute_combined_video_download(
             tui::spinner_ok(&spinner, &format!("Downloaded {filename}"));
             Ok(path)
         }
-        Err(err) => match execute_binary_video_download(cfg, video, output_path).await {
-            Ok(path) => {
-                tui::spinner_ok(&spinner, &format!("Downloaded {filename}"));
-                Ok(path)
+        // The crate's `format` carries a signed CDN URL captured at metadata-fetch time;
+        // TikTok's URLs in particular expire within seconds, so by the time we reach this
+        // fallback it's often already dead (403). `execute_binary_video_download` re-resolves
+        // from the webpage URL instead, but that re-resolution is itself subject to the same
+        // transient TikTok extractor/network flakiness fetch_video retries around — so retry
+        // it here too rather than surfacing a one-off timeout as a hard failure.
+        Err(err) => {
+            let mut binary_result = execute_binary_video_download(cfg, video, output_path).await;
+            for _ in 1..BINARY_DOWNLOAD_ATTEMPTS {
+                if binary_result.is_ok() {
+                    break;
+                }
+                tokio::time::sleep(METADATA_RETRY_DELAY).await;
+                binary_result = execute_binary_video_download(cfg, video, output_path).await;
             }
-            Err(binary_err) => {
-                tui::spinner_err(&spinner, "Failed to download combined video format");
-                Err(binary_err).context(format!(
-                    "Failed to download combined video format after crate fallback error: {err}"
-                ))
+
+            match binary_result {
+                Ok(path) => {
+                    tui::spinner_ok(&spinner, &format!("Downloaded {filename}"));
+                    Ok(path)
+                }
+                Err(binary_err) => {
+                    tui::spinner_err(&spinner, "Failed to download combined video format");
+                    Err(binary_err).context(format!(
+                        "Failed to download combined video format after crate fallback error: {err}"
+                    ))
+                }
             }
-        },
+        }
     }
 }
 
@@ -776,6 +819,7 @@ async fn execute_binary_video_download(
     let output = tokio::process::Command::new(sandbox::ytdlp_path(cfg))
         .arg("-o")
         .arg(output_path.as_os_str())
+        .args(downloader::cookie_args(cfg)?)
         .arg(url)
         .output()
         .await

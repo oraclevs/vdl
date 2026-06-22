@@ -134,7 +134,7 @@ export default function DownloadConsole({ onLaunched }) {
                   type="url"
                   placeholder="Paste a video, post, or track URL…"
                   value={url}
-                  onChange={(e) => { setUrl(e.target.value); setError(null); }}
+                  onChange={(e) => { setUrl(e.target.value); setError(null); setMeta(null); }}
                   onKeyDown={(e) => { if (e.key === 'Enter') fetchPreview(); }}
                   spellCheck={false}
                 />

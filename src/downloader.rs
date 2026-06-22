@@ -1,3 +1,5 @@
+use std::ffi::OsString;
+
 use anyhow::{bail, Context, Result};
 use yt_dlp::Downloader;
 
@@ -52,6 +54,34 @@ pub async fn build(cfg: &Config) -> Result<Downloader> {
         .build()
         .await
         .context("Failed to initialise Downloader")
+}
+
+/// Builds the `--cookies`/`--cookies-from-browser` argv pair for sandboxed raw-binary
+/// invocations that bypass [`build`] (the TikTok JSON fallback and the final binary
+/// download fallback in `commands::mod`) — those calls were silently dropping cookie
+/// config since they only ever shelled out with the bare URL.
+pub(crate) fn cookie_args(cfg: &Config) -> Result<Vec<OsString>> {
+    let cookie_file = cfg.cookies_file_expanded();
+    let browser = normalized_browser_name(cfg.cookies_from_browser.as_deref());
+
+    if let (Some(cookie_file), Some(browser)) = (&cookie_file, &browser) {
+        bail!(
+            "Config options cookies_file ({}) and cookies_from_browser ({browser}) are mutually exclusive",
+            cookie_file.display()
+        );
+    }
+
+    let mut args = Vec::new();
+    if let Some(cookie_file) = cookie_file {
+        let mut arg = OsString::from("--cookies=");
+        arg.push(cookie_file.as_os_str());
+        args.push(arg);
+    }
+    if let Some(browser) = browser {
+        args.push(OsString::from(format!("--cookies-from-browser={browser}")));
+    }
+
+    Ok(args)
 }
 
 fn normalized_browser_name(value: Option<&str>) -> Option<String> {

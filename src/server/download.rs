@@ -167,10 +167,11 @@ async fn drive(
     let progress = indicatif::ProgressBar::hidden();
     let mut events = downloader.subscribe_events();
     let bridge_state = Arc::clone(state);
+    let bridge_progress = progress.clone();
     let bridge = tokio::spawn(async move {
         loop {
             match events.recv().await {
-                Ok(event) => translate_event(&bridge_state, session_id, &event),
+                Ok(event) => translate_event(&bridge_state, session_id, &bridge_progress, &event),
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             }
@@ -229,20 +230,29 @@ async fn execute_download(
 /// Translates the engine's own `DownloadEvent` stream into `ServerEvent` broadcasts —
 /// the "event bridge". Each session gets a freshly built `Downloader`, so every event
 /// observed here belongs to this session; no `download_id` matching is required.
-fn translate_event(state: &AppState, session_id: Uuid, event: &DownloadEvent) {
+///
+/// `progress` is the same hidden [`indicatif::ProgressBar`] driven by the weighted,
+/// monotonic `with_progress` callback in `execute_*_download` (video 0–50%, audio
+/// 50–100% for combined downloads, never regressing). The raw `DownloadEvent::
+/// DownloadProgress` byte counters below are *per individual stream* and restart at
+/// zero for each of the video/audio downloads, which run concurrently — broadcasting
+/// those directly made the browser's progress bar visibly jump backward as video/audio
+/// events interleaved. Read the percent from `progress` instead; only speed/eta/size
+/// (display-only, not used to drive the bar) still come from the raw event.
+fn translate_event(
+    state: &AppState,
+    session_id: Uuid,
+    progress: &indicatif::ProgressBar,
+    event: &DownloadEvent,
+) {
     match event {
         DownloadEvent::DownloadProgress {
-            downloaded_bytes,
             total_bytes,
             speed_bytes_per_sec,
             eta_seconds,
             ..
         } => {
-            let percent = if *total_bytes > 0 {
-                (*downloaded_bytes as f32 / *total_bytes as f32) * 100.0
-            } else {
-                0.0
-            };
+            let percent = (progress.position() as f32 / 1000.0) * 100.0;
             set_progress(state, session_id, percent);
             broadcast(
                 state,

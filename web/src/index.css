@@ -2,21 +2,21 @@
 @import 'tailwindcss';
 
 @theme {
-  --color-paper: #faf5ee;
-  --color-paper-deep: #f1e9dc;
-  --color-ink: #221d18;
-  --color-ink-soft: #6b6259;
-  --color-ink-faint: #a89e92;
-  --color-line: #e6dccb;
-  --color-card: #fffdfa;
-  --color-coral: #e8602f;
-  --color-coral-soft: #fce3d6;
-  --color-teal: #1f6f63;
-  --color-teal-soft: #dcefe9;
-  --color-plum: #6c4f8c;
-  --color-plum-soft: #ece3f3;
-  --color-rose: #c8505b;
-  --color-rose-soft: #f8dde0;
+  --color-paper: #15120f;
+  --color-paper-deep: #1c1712;
+  --color-ink: #f1e9dc;
+  --color-ink-soft: #b3a797;
+  --color-ink-faint: #786c5d;
+  --color-line: #34291e;
+  --color-card: #1f1a14;
+  --color-coral: #f17444;
+  --color-coral-soft: #3a2015;
+  --color-teal: #3fa593;
+  --color-teal-soft: #16302a;
+  --color-plum: #a285c8;
+  --color-plum-soft: #281f38;
+  --color-rose: #e07a83;
+  --color-rose-soft: #3a1d22;
 
   --font-display: 'Instrument Serif', Georgia, serif;
   --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
@@ -41,9 +41,9 @@
 @layer utilities {
   .bg-grain {
     background-image:
-      radial-gradient(circle at 20% 20%, rgba(232, 96, 47, 0.07), transparent 38%),
-      radial-gradient(circle at 85% 0%, rgba(31, 111, 99, 0.06), transparent 42%),
-      radial-gradient(circle at 50% 100%, rgba(108, 79, 140, 0.05), transparent 45%);
+      radial-gradient(circle at 20% 20%, rgba(241, 116, 68, 0.14), transparent 38%),
+      radial-gradient(circle at 85% 0%, rgba(63, 165, 147, 0.12), transparent 42%),
+      radial-gradient(circle at 50% 100%, rgba(162, 133, 200, 0.1), transparent 45%);
   }
 }
 
